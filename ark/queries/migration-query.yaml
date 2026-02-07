@@ -1,0 +1,170 @@
+apiVersion: agents.ark.ai/v1
+kind: Query
+metadata:
+  name: banque-migration-query
+  namespace: banque-migration
+  labels:
+    app: banque-migration
+    migration-type: full-stack
+spec:
+  type: team
+  target:
+    teamRef:
+      name: migration-team
+      namespace: banque-migration
+
+  input: |
+    Migrate the banque-app-main project to a modern micro-frontends and microservices architecture.
+
+    SOURCE CODEBASE:
+    Path: /home/hbaqa/Desktop/banque-app-main
+    Stack: Blazor WebAssembly + Spring Boot monolith
+
+    TARGET ARCHITECTURE:
+    Path: /home/hbaqa/Desktop/banque-app-transformed
+    Stack: Angular micro-frontends + Spring Boot microservices
+
+    REQUIREMENTS:
+
+    1. BACKEND (5 Microservices):
+       a) Auth Service (port 8081):
+          - User authentication with JWT
+          - User registration and management
+          - Password reset functionality
+          - Refresh token handling
+
+       b) Client Service (port 8082):
+          - Client CRUD operations
+          - Client profile management
+          - Client types (PARTICULIER, PROFESSIONNEL, ENTREPRISE)
+          - Client search functionality
+
+       c) Account Service (port 8083):
+          - Account management
+          - Balance inquiries
+          - Account types (COURANT, EPARGNE, JEUNE)
+          - Account status management
+
+       d) Transaction Service (port 8084):
+          - Transaction history
+          - Money transfers (virement)
+          - Transaction validation
+          - Transaction types (DEPOT, RETRAIT, VIREMENT, PRELEVEMENT)
+
+       e) Card Service (port 8085):
+          - Card management
+          - Card activation/deactivation
+          - Card limits management
+          - Card types (DEBIT, CREDIT, PREPAID)
+
+    2. SUPPORTING SERVICES:
+       - API Gateway (Spring Cloud Gateway, port 8080)
+       - Config Server (Spring Cloud Config)
+       - Discovery Service (Eureka)
+
+    3. FRONTEND (5 Micro-frontends with Module Federation):
+       a) Shell (Host) - port 4200:
+          - Main container application
+          - Routing to remote modules
+          - Shared layout and navigation
+          - Authentication state management
+
+       b) Auth MFE - port 4201:
+          - Login page
+          - Registration page
+          - Password reset flow
+
+       c) Dashboard MFE - port 4202:
+          - Account overview
+          - Balance summary
+          - Recent transactions
+          - Quick actions
+
+       d) Transfers MFE - port 4203:
+          - Money transfer form
+          - Beneficiary management
+          - Transfer history
+
+       e) Cards MFE - port 4204:
+          - Card list
+          - Card details
+          - Card activation/limits
+
+    4. TECHNOLOGY STACK:
+       Backend:
+       - Spring Boot 3.2.x
+       - Java 17
+       - Spring Security 6.x with JWT
+       - Spring Data JPA
+       - PostgreSQL
+       - Maven 3.9+
+       - OpenAPI 3.0 (springdoc-openapi)
+
+       Frontend:
+       - Angular 18+
+       - Webpack 5 Module Federation
+       - TypeScript 5+
+       - RxJS
+       - Angular Material or PrimeNG
+       - npm
+
+    5. DELIVERABLES:
+       - Complete microservices code with tests
+       - Complete micro-frontends code
+       - Dockerfiles for all services
+       - docker-compose.yml for local development
+       - OpenShift/Kubernetes manifests
+       - CI/CD pipeline definitions (Tekton)
+       - API documentation (OpenAPI specs)
+       - Architecture documentation
+       - README files
+
+    6. QUALITY REQUIREMENTS:
+       - All code must compile
+       - Unit tests with >70% coverage
+       - Integration tests for critical paths
+       - No hardcoded secrets
+       - Proper error handling
+       - Security best practices (OWASP)
+       - Docker best practices
+
+    OUTPUT: Generate a complete, working prototype ready for deployment.
+
+  timeout: 180m
+
+  evaluation:
+    enabled: true
+    criteria:
+      - name: completeness
+        description: All services and frontends are generated
+        weight: 0.3
+        threshold: 100
+
+      - name: code-quality
+        description: Code compiles and passes tests
+        weight: 0.3
+        threshold: 90
+
+      - name: architecture
+        description: Follows microservices best practices
+        weight: 0.2
+        threshold: 85
+
+      - name: deployment
+        description: OpenShift configs are valid
+        weight: 0.1
+        threshold: 100
+
+      - name: security
+        description: No critical security issues
+        weight: 0.1
+        threshold: 100
+
+  notifications:
+    onComplete:
+      - type: log
+        message: "Migration completed successfully"
+    onFailure:
+      - type: log
+        message: "Migration failed"
+        includeErrors: true

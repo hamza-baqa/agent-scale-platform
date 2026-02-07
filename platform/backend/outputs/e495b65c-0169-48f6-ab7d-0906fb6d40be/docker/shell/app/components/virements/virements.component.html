@@ -1,0 +1,162 @@
+{{attribute}} [Authorize]
+
+<!-- Title: Virements - EuroBank -->
+
+<div class="virements-page">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="h4 mb-0">
+                <i class="fas fa-exchange-alt me-2 text-primary"></i>
+                Effectuer un virement
+            </h2>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-4">
+                    <form (ngSubmit)="onSubmit()" >
+                        
+                        
+                        {{if}} (!!errorMessage)
+                        {
+                            <div class="alert alert-danger">
+                                <i class="fas fa-exclamation-circle me-2"></i>{{errorMessage}}
+                            </div></ng-container>
+                        
+                        <ng-container *ngIf="virementEffectue">
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle me-2"></i>
+                                Virement effectué avec succès ! Référence: {{referenceVirement}}
+                            </div></ng-container>
+                        
+                        <!-- Compte émetteur -->
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold">Compte à débiter</label>
+                            <InputSelect [(ngModel)]="virementModel.IbanEmetteur" class="form-select form-select-lg">
+                                <option value="">-- Sélectionner un compte --</option>
+                                {{foreach}} (var compte in comptes)
+                                {
+                                    <option value="{{compte}}.Iban">
+                                        {{compte}}.Intitule - {{compte}}.IbanFormate ({{compte}}.SoldeDisponible.ToString("N2") € disponible)
+                                    </option></ng-container>
+                            </InputSelect>
+                            <span class="text-danger"></span> virementModel.IbanEmetteur)" class="text-danger small" />
+                        </div>
+                        
+                        <!-- Bénéficiaire -->
+                        <div class="card bg-light border-0 mb-4">
+                            <div class="card-body">
+                                <h6 class="card-title mb-3">
+                                    <i class="fas fa-user me-2"></i>Bénéficiaire
+                                </h6>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">Nom du bénéficiaire</label>
+                                    <input type="text" [(ngModel)]="virementModel.NomBeneficiaire" class="form-control" 
+                                               placeholder="Ex: Jean DUPONT" />
+                                    <span class="text-danger"></span> virementModel.NomBeneficiaire)" class="text-danger small" />
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">IBAN du bénéficiaire</label>
+                                    <input type="text" [(ngModel)]="virementModel.IbanBeneficiaire" class="form-control font-monospace" 
+                                               placeholder="FR76 3000 1000 0100 0123 4567 890" style="text-transform: uppercase" />
+                                    <span class="text-danger"></span> virementModel.IbanBeneficiaire)" class="text-danger small" />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Montant et motif -->
+                        <div class="row mb-4">
+                            <div class="col-md-6 mb-3 mb-md-0">
+                                <label class="form-label fw-semibold">Montant</label>
+                                <div class="input-group input-group-lg">
+                                    <InputNumber [(ngModel)]="virementModel.Montant" class="form-control" 
+                                                 placeholder="0,00" step="0.01" />
+                                    <span class="input-group-text">€</span>
+                                </div>
+                                <span class="text-danger"></span> virementModel.Montant)" class="text-danger small" />
+                            </div>
+                            
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Motif (optionnel)</label>
+                                <input type="text" [(ngModel)]="virementModel.Motif" class="form-control form-control-lg" 
+                                           placeholder="Ex: Loyer janvier" />
+                            </div>
+                        </div>
+                        
+                        <!-- Options -->
+                        <div class="mb-4">
+                            <div class="form-check form-switch">
+                                <input type="checkbox" class="form-check-input" id="instantane" {{bind}}="virementModel.Instantane" />
+                                <label class="form-check-label" for="instantane">
+                                    <strong>Virement instantané</strong>
+                                    <small class="d-block text-muted">Exécuté en quelques secondes (max 15 000 €)</small>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <!-- Boutons -->
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg" [disabled]="isLoading">
+                                <ng-container *ngIf="isLoading">
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    <span>Traitement en cours...</span></ng-container><ng-container *ngIf="!($1)">
+                                    <i class="fas fa-paper-plane me-2"></i>
+                                    <span>Valider le virement</span></ng-container>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-lg" (click)="ResetForm">
+                                <i class="fas fa-redo me-2"></i>Réinitialiser
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Aide et informations -->
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body">
+                    <h6 class="card-title">
+                        <i class="fas fa-info-circle me-2 text-info"></i>
+                        Informations
+                    </h6>
+                    <ul class="list-unstyled small text-muted mb-0">
+                        <li class="mb-2">
+                            <i class="fas fa-check text-success me-2"></i>
+                            Virement SEPA : exécuté sous 1 jour ouvré
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-bolt text-warning me-2"></i>
+                            Virement instantané : max 15 000 €
+                        </li>
+                        <li class="mb-2">
+                            <i class="fas fa-shield-alt text-primary me-2"></i>
+                            Transaction 100% sécurisée
+                        </li>
+                        <li>
+                            <i class="fas fa-clock text-secondary me-2"></i>
+                            Limite : 10 virements/jour
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="card border-0 shadow-sm bg-warning-subtle">
+                <div class="card-body">
+                    <h6 class="card-title text-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Attention aux fraudes
+                    </h6>
+                    <p class="small mb-0">
+                        Ne communiquez jamais vos identifiants. EuroBank ne vous demandera jamais 
+                        d'effectuer un virement par téléphone ou email.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

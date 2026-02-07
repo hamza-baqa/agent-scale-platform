@@ -1,0 +1,104 @@
+apiVersion: agents.ark.ai/v1
+kind: Team
+metadata:
+  name: migration-team
+  namespace: banque-migration
+  labels:
+    app: banque-migration
+    purpose: full-stack-migration
+spec:
+  description: |
+    Orchestrate the complete migration from monolithic Blazor + Spring Boot
+    to microservices + micro-frontends architecture.
+
+  agents:
+    - name: code-analyzer
+      role: analyzer
+      order: 1
+      description: Analyze the existing banque-app-main codebase
+      required: true
+
+    - name: migration-planner
+      role: planner
+      order: 2
+      description: Create detailed migration plan based on analysis
+      dependsOn:
+        - code-analyzer
+      required: true
+
+    - name: service-generator
+      role: backend-generator
+      order: 3
+      description: Generate Spring Boot microservices
+      dependsOn:
+        - migration-planner
+      required: true
+      parallelWith:
+        - frontend-migrator
+
+    - name: frontend-migrator
+      role: frontend-generator
+      order: 3
+      description: Generate Angular micro-frontends
+      dependsOn:
+        - migration-planner
+      required: true
+      parallelWith:
+        - service-generator
+
+    - name: quality-validator
+      role: validator
+      order: 4
+      description: Validate all generated code
+      dependsOn:
+        - service-generator
+        - frontend-migrator
+      required: true
+
+  coordinationStrategy: sequential-with-parallel
+
+  workflow:
+    onFailure: stop
+    retryPolicy:
+      maxAttempts: 2
+      backoff: exponential
+
+  timeoutMinutes: 180
+
+  outputs:
+    - name: analysis-report
+      source: code-analyzer
+      type: json
+      path: /tmp/ark-outputs/analysis-report.json
+
+    - name: migration-plan
+      source: migration-planner
+      type: json
+      path: /tmp/ark-outputs/migration-plan.json
+
+    - name: generated-services
+      source: service-generator
+      type: directory
+      path: /home/hbaqa/Desktop/banque-app-transformed/microservices
+
+    - name: generated-frontends
+      source: frontend-migrator
+      type: directory
+      path: /home/hbaqa/Desktop/banque-app-transformed/micro-frontends
+
+    - name: validation-report
+      source: quality-validator
+      type: json
+      path: /home/hbaqa/Desktop/banque-app-transformed/validation-report.json
+
+  monitoring:
+    enabled: true
+    metrics:
+      - name: execution-time
+        type: duration
+      - name: code-lines-generated
+        type: counter
+      - name: tests-passed
+        type: gauge
+      - name: code-coverage
+        type: percentage

@@ -1,0 +1,414 @@
+{
+  "name": "Banque Migration Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "migration",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "banque-migration-webhook"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/{{ $json.migrationId }}/status",
+        "method": "POST",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": {
+          "agent": "code-analyzer",
+          "status": "started",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-analyzer-start",
+      "name": "Notify: Analyzer Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "agent": "code-analyzer",
+        "namespace": "banque-migration",
+        "input": "={{ 'Analyze codebase at: ' + $json.repoUrl }}",
+        "memory": "ark-migration-memory",
+        "sessionId": "={{ $json.migrationId }}",
+        "waitForCompletion": true,
+        "timeout": "600s"
+      },
+      "id": "ark-code-analyzer",
+      "name": "ARK Agent: Code Analyzer",
+      "type": "arkAgent",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/status",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "agent": "code-analyzer",
+          "status": "completed",
+          "output": "={{ $json.response }}",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-analyzer-done",
+      "name": "Notify: Analyzer Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/status",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "agent": "migration-planner",
+          "status": "started",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-planner-start",
+      "name": "Notify: Planner Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "agent": "migration-planner",
+        "namespace": "banque-migration",
+        "input": "={{ 'Create migration plan based on analysis: ' + JSON.stringify($json.response) }}",
+        "memory": "ark-migration-memory",
+        "sessionId": "={{ $json.migrationId }}",
+        "waitForCompletion": true,
+        "timeout": "900s"
+      },
+      "id": "ark-migration-planner",
+      "name": "ARK Agent: Migration Planner",
+      "type": "arkAgent",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/status",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "agent": "migration-planner",
+          "status": "completed",
+          "output": "={{ $json.response }}",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-planner-done",
+      "name": "Notify: Planner Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/status",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "agent": "service-generator",
+          "status": "started",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-service-start",
+      "name": "Notify: Service Generator Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "agent": "service-generator",
+        "namespace": "banque-migration",
+        "input": "={{ 'Generate microservices based on plan: ' + JSON.stringify($json.response) }}",
+        "memory": "ark-migration-memory",
+        "sessionId": "={{ $json.migrationId }}",
+        "waitForCompletion": true,
+        "timeout": "1800s"
+      },
+      "id": "ark-service-generator",
+      "name": "ARK Agent: Service Generator",
+      "type": "arkAgent",
+      "typeVersion": 1,
+      "position": [1850, 200],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/status",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "agent": "service-generator",
+          "status": "completed",
+          "output": "={{ $json.response }}",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-service-done",
+      "name": "Notify: Service Generator Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/status",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "agent": "frontend-migrator",
+          "status": "started",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-frontend-start",
+      "name": "Notify: Frontend Migrator Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "agent": "frontend-migrator",
+        "namespace": "banque-migration",
+        "input": "={{ 'Generate micro-frontends based on plan: ' + JSON.stringify($json.response) }}",
+        "memory": "ark-migration-memory",
+        "sessionId": "={{ $json.migrationId }}",
+        "waitForCompletion": true,
+        "timeout": "1800s"
+      },
+      "id": "ark-frontend-migrator",
+      "name": "ARK Agent: Frontend Migrator",
+      "type": "arkAgent",
+      "typeVersion": 1,
+      "position": [1850, 400],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/status",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "agent": "frontend-migrator",
+          "status": "completed",
+          "output": "={{ $json.response }}",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-frontend-done",
+      "name": "Notify: Frontend Migrator Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2050, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition"
+      },
+      "id": "merge-parallel",
+      "name": "Merge Parallel Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [2250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/status",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "agent": "quality-validator",
+          "status": "started",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-validator-start",
+      "name": "Notify: Validator Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2450, 300]
+    },
+    {
+      "parameters": {
+        "agent": "quality-validator",
+        "namespace": "banque-migration",
+        "input": "={{ 'Validate all generated code for migration: ' + $json.migrationId }}",
+        "memory": "ark-migration-memory",
+        "sessionId": "={{ $json.migrationId }}",
+        "waitForCompletion": true,
+        "timeout": "900s"
+      },
+      "id": "ark-quality-validator",
+      "name": "ARK Agent: Quality Validator",
+      "type": "arkAgent",
+      "typeVersion": 1,
+      "position": [2650, 300],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/complete",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "status": "success",
+          "validationReport": "={{ $json.response }}",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "notify-complete",
+      "name": "Notify: Migration Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "options": {},
+        "responseBody": {
+          "success": true,
+          "migrationId": "={{ $json.migrationId }}",
+          "status": "completed",
+          "message": "Migration completed successfully"
+        }
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3050, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.backendUrl }}/api/migrations/={{ $json.migrationId }}/error",
+        "method": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": {
+          "error": "={{ $json.error }}",
+          "timestamp": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "handle-error",
+      "name": "Handle Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2650, 500]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Notify: Analyzer Started", "type": "main", "index": 0 }]]
+    },
+    "Notify: Analyzer Started": {
+      "main": [[{ "node": "ARK Agent: Code Analyzer", "type": "main", "index": 0 }]]
+    },
+    "ARK Agent: Code Analyzer": {
+      "main": [[{ "node": "Notify: Analyzer Completed", "type": "main", "index": 0 }]]
+    },
+    "Notify: Analyzer Completed": {
+      "main": [[{ "node": "Notify: Planner Started", "type": "main", "index": 0 }]]
+    },
+    "Notify: Planner Started": {
+      "main": [[{ "node": "ARK Agent: Migration Planner", "type": "main", "index": 0 }]]
+    },
+    "ARK Agent: Migration Planner": {
+      "main": [[{ "node": "Notify: Planner Completed", "type": "main", "index": 0 }]]
+    },
+    "Notify: Planner Completed": {
+      "main": [
+        [
+          { "node": "Notify: Service Generator Started", "type": "main", "index": 0 },
+          { "node": "Notify: Frontend Migrator Started", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Notify: Service Generator Started": {
+      "main": [[{ "node": "ARK Agent: Service Generator", "type": "main", "index": 0 }]]
+    },
+    "ARK Agent: Service Generator": {
+      "main": [[{ "node": "Notify: Service Generator Completed", "type": "main", "index": 0 }]]
+    },
+    "Notify: Service Generator Completed": {
+      "main": [[{ "node": "Merge Parallel Results", "type": "main", "index": 0 }]]
+    },
+    "Notify: Frontend Migrator Started": {
+      "main": [[{ "node": "ARK Agent: Frontend Migrator", "type": "main", "index": 0 }]]
+    },
+    "ARK Agent: Frontend Migrator": {
+      "main": [[{ "node": "Notify: Frontend Migrator Completed", "type": "main", "index": 0 }]]
+    },
+    "Notify: Frontend Migrator Completed": {
+      "main": [[{ "node": "Merge Parallel Results", "type": "main", "index": 1 }]]
+    },
+    "Merge Parallel Results": {
+      "main": [[{ "node": "Notify: Validator Started", "type": "main", "index": 0 }]]
+    },
+    "Notify: Validator Started": {
+      "main": [[{ "node": "ARK Agent: Quality Validator", "type": "main", "index": 0 }]]
+    },
+    "ARK Agent: Quality Validator": {
+      "main": [[{ "node": "Notify: Migration Completed", "type": "main", "index": 0 }]]
+    },
+    "Notify: Migration Completed": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-02-05T10:00:00.000Z",
+  "versionId": "1"
+}

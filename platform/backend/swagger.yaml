@@ -1,0 +1,170 @@
+openapi: 3.0.0
+info:
+  title: Banking Migration Platform API
+  description: API for managing code migrations using ARK agents
+  version: 1.0.0
+  contact:
+    name: EuroBank
+    email: support@eurobank.com
+
+servers:
+  - url: http://localhost:4000
+    description: Development server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - System
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+                  uptime:
+                    type: number
+                  environment:
+                    type: string
+
+  /api/migrations:
+    get:
+      summary: Get all migrations
+      tags:
+        - Migrations
+      responses:
+        '200':
+          description: List of migrations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Migration'
+
+    post:
+      summary: Create new migration
+      tags:
+        - Migrations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - repoUrl
+              properties:
+                repoUrl:
+                  type: string
+                  example: https://github.com/org/repo
+                options:
+                  type: object
+                  properties:
+                    includeDocs:
+                      type: boolean
+                    includeTests:
+                      type: boolean
+      responses:
+        '201':
+          description: Migration created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Migration'
+
+  /api/migrations/{id}:
+    get:
+      summary: Get migration by ID
+      tags:
+        - Migrations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Migration details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Migration'
+        '404':
+          description: Migration not found
+
+  /api/migrations/{id}/download:
+    get:
+      summary: Download migration output
+      tags:
+        - Migrations
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ZIP file download
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+
+components:
+  schemas:
+    Migration:
+      type: object
+      properties:
+        id:
+          type: string
+        repoUrl:
+          type: string
+        status:
+          type: string
+          enum: [pending, cloning, analyzing, planning, generating, validating, completed, failed]
+        progress:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentProgress'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    AgentProgress:
+      type: object
+      properties:
+        agent:
+          type: string
+          enum: [code-analyzer, migration-planner, service-generator, frontend-migrator, quality-validator]
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        output:
+          type: object
+        error:
+          type: string

@@ -1,0 +1,47 @@
+digraph BankingApp {
+  label="Banking Application Architecture\nFramework: Blazor + Spring Boot\nDatabase: PostgreSQL";
+  rankdir=LR;
+
+  // Frontend Components
+  node [shape=box, style=filled, fillcolor=lightblue];
+  AuthUI [label="Authentication UI", type="component", routes="/login,/register"];
+  DashboardUI [label="Dashboard UI", type="component", routes="/dashboard,/overview"];
+  TransfersUI [label="Transfers UI", type="component", routes="/transfers,/transfer/new", components="TransferForm,TransferList,TransferHistory"];
+  CardsUI [label="Cards Management UI", type="component", routes="/cards,/cards/new", components="CardList,CardDetails,CardApplication"];
+
+  // Backend Services
+  node [shape=ellipse, style=filled, fillcolor=lightgreen];
+  AuthService [label="Authentication Service", type="service", endpoints="POST /login, POST /register, POST /logout"];
+  ClientService [label="Client Service", type="service", endpoints="GET /clients, GET /clients/:id, POST /clients, PUT /clients/:id"];
+  AccountService [label="Account Service", type="service", endpoints="GET /accounts, GET /accounts/:id, POST /accounts, GET /accounts/:id/balance"];
+  TransactionService [label="Transaction Service", type="service", endpoints="GET /transactions, POST /transactions, GET /transactions/:id"];
+  CardService [label="Card Service", type="service", endpoints="GET /cards, POST /cards, PUT /cards/:id, DELETE /cards/:id"];
+
+  // Databases
+  node [shape=cylinder, style=filled, fillcolor=lightyellow];
+  AuthDB [label="Authentication DB", type="database"];
+  ClientDB [label="Client DB", type="database"];
+  AccountDB [label="Account DB", type="database"];
+  TransactionDB [label="Transaction DB", type="database"];
+  CardDB [label="Card DB", type="database"];
+
+  // UI to Service Connections
+  AuthUI -> AuthService [label="authenticate"];
+  DashboardUI -> AccountService [label="get balance"];
+  DashboardUI -> TransactionService [label="get recent"];
+  TransfersUI -> TransactionService [label="create transfer"];
+  TransfersUI -> AccountService [label="validate account"];
+  CardsUI -> CardService [label="manage cards"];
+
+  // Service to Database Connections
+  AuthService -> AuthDB [label="User"];
+  ClientService -> ClientDB [label="Client"];
+  AccountService -> AccountDB [label="Account"];
+  TransactionService -> TransactionDB [label="Transaction"];
+  CardService -> CardDB [label="Card"];
+
+  // Inter-Service Communication
+  TransactionService -> AccountService [label="update balance"];
+  CardService -> AccountService [label="link card"];
+  AccountService -> ClientService [label="get client info"];
+}
