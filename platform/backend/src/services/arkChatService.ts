@@ -1641,11 +1641,18 @@ Generate a complete Angular application following the structure defined in your 
     try {
       logger.info(`📡 Calling ARK agent: ${agentName}`);
 
+      // Use OpenAI-compatible endpoint (the /agent/{name} endpoint doesn't work)
       const response = await axios.post(
-        `${this.arkApiUrl}/agent/${agentName}`,
+        `${this.arkApiUrl}/openai/v1/chat/completions`,
         {
-          input: prompt,
-          context: context || {}
+          model: `agent/${agentName}`,
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          metadata: context || {}
         },
         {
           headers: {
@@ -1655,11 +1662,13 @@ Generate a complete Angular application following the structure defined in your 
         }
       );
 
-      if (response.data && response.data.output) {
+      if (response.data && response.data.choices && response.data.choices[0]) {
+        const output = response.data.choices[0].message.content;
         logger.info(`✅ ARK agent ${agentName} completed successfully`);
+        logger.info(`   Output length: ${output.length} characters`);
         return {
           success: true,
-          rawOutput: response.data.output
+          rawOutput: output
         };
       }
 
