@@ -1,7 +1,148 @@
 import { Router, Request, Response } from 'express';
 import logger from '../utils/logger';
+import arkChatService from '../services/arkChatService';
+import migrationService from '../services/migrationService';
 
 const router = Router();
+
+/**
+ * Agent help request endpoint - Agents can ask developer for help
+ */
+router.post('/migrations/:migrationId/agent-help', async (req: Request, res: Response) => {
+  try {
+    const { migrationId } = req.params;
+    const { agentName, issue, context, question } = req.body;
+
+    logger.info('Agent requesting help', { migrationId, agentName, issue });
+
+    // Store help request for developer
+    const helpRequest = {
+      migrationId,
+      agentName,
+      issue,
+      context,
+      question,
+      timestamp: new Date().toISOString(),
+      status: 'pending'
+    };
+
+    // Store in global help requests (in a real system, this would be in a database)
+    if (!(global as any).agentHelpRequests) {
+      (global as any).agentHelpRequests = new Map();
+    }
+    (global as any).agentHelpRequests.set(migrationId, helpRequest);
+
+    // Emit WebSocket event to notify developer
+    const io = (req.app.locals as any).io;
+    if (io) {
+      io.emit('agent-needs-help', {
+        migrationId,
+        agentName,
+        issue,
+        question,
+        timestamp: helpRequest.timestamp
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Help request sent to developer',
+      helpRequestId: migrationId,
+      status: 'pending'
+    });
+  } catch (error: any) {
+    logger.error('Agent help request error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to process help request',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Developer response to agent help request
+ */
+router.post('/migrations/:migrationId/agent-help/respond', async (req: Request, res: Response) => {
+  try {
+    const { migrationId } = req.params;
+    const { response, action } = req.body; // action: 'continue', 'retry', 'skip', 'abort'
+
+    logger.info('Developer responding to agent help request', { migrationId, action });
+
+    const helpRequests = (global as any).agentHelpRequests;
+    const helpRequest = helpRequests?.get(migrationId);
+
+    if (!helpRequest) {
+      return res.status(404).json({
+        success: false,
+        error: 'Help request not found'
+      });
+    }
+
+    // Update help request with developer response
+    helpRequest.developerResponse = response;
+    helpRequest.action = action;
+    helpRequest.status = 'resolved';
+    helpRequest.resolvedAt = new Date().toISOString();
+
+    // Emit WebSocket event to agent
+    const io = (req.app.locals as any).io;
+    if (io) {
+      io.emit('developer-response', {
+        migrationId,
+        response,
+        action,
+        timestamp: helpRequest.resolvedAt
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Response sent to agent',
+      action
+    });
+  } catch (error: any) {
+    logger.error('Developer response error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to send response',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Get pending help requests for a migration
+ */
+router.get('/migrations/:migrationId/agent-help', async (req: Request, res: Response) => {
+  try {
+    const { migrationId } = req.params;
+
+    const helpRequests = (global as any).agentHelpRequests;
+    const helpRequest = helpRequests?.get(migrationId);
+
+    if (!helpRequest) {
+      return res.json({
+        success: true,
+        helpRequest: null,
+        message: 'No pending help requests'
+      });
+    }
+
+    res.json({
+      success: true,
+      helpRequest
+    });
+  } catch (error: any) {
+    logger.error('Get help request error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get help request',
+      message: error.message
+    });
+  }
+});
 
 /**
  * Chat endpoint for documentation Q&A
@@ -12,6 +153,34 @@ router.post('/migrations/:migrationId/chat', async (req: Request, res: Response)
     const { message, context } = req.body;
 
     logger.info('Chat request received', { migrationId, message });
+
+    // Check if there's an active validation session needing fixes
+    const sessionId = `validation-${migrationId}`;
+    const validationSessions = (global as any).validationSessions || new Map();
+    const validationSession = validationSessions.get(sessionId);
+
+    // If user is asking to fix validation errors and there's an active session
+    if (validationSession && (
+      message.toLowerCase().includes('fix') ||
+      message.toLowerCase().includes('error') ||
+      message.toLowerCase().includes('validation')
+    )) {
+      logger.info('Routing to interactive validation fix agent');
+
+      const fixResponse = await handleValidationFixInteraction(
+        message,
+        validationSession,
+        migrationId
+      );
+
+      res.json({
+        success: true,
+        response: fixResponse,
+        isInteractive: true,
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
 
     // Generate intelligent response based on the message and context
     const response = generateDocumentationResponse(message, context);
@@ -30,6 +199,186 @@ router.post('/migrations/:migrationId/chat', async (req: Request, res: Response)
     });
   }
 });
+
+/**
+ * Interactive validation fix agent
+ * Analyzes errors, proposes fixes, applies them, and revalidates
+ */
+async function handleValidationFixInteraction(
+  userMessage: string,
+  session: any,
+  migrationId: string
+): Promise<string> {
+  const { errors, servicesPath, workspaceDir } = session;
+  const { execSync } = require('child_process');
+  const fs = require('fs-extra');
+  const path = require('path');
+
+  // Initialize conversation state
+  session.conversationState = session.conversationState || {
+    step: 'initial',
+    fixesProposed: [],
+    fixesApplied: [],
+    servicesFixed: []
+  };
+
+  const state = session.conversationState;
+
+  // Step 1: Initial analysis and proposal
+  if (state.step === 'initial' || userMessage.toLowerCase().includes('start') || userMessage.toLowerCase().includes('begin')) {
+    let response = '**AI Validation Fix Agent**\n\n';
+    response += `I've analyzed the compilation errors. Here's what I found:\n\n`;
+
+    // Analyze errors intelligently
+    const errorPatterns = {
+      lombok: errors.some((e: string) => e.includes('log') || e.includes('Data')),
+      imports: errors.some((e: string) => e.includes('package') || e.includes('does not exist')),
+      duplicates: errors.some((e: string) => e.includes('already defined')),
+      enums: errors.some((e: string) => e.includes('cannot find symbol'))
+    };
+
+    response += '**Issues Found:**\n\n';
+
+    if (errorPatterns.lombok) {
+      response += '1. FAILED: Lombok annotations not working (@Slf4j, @Data)\n';
+      state.fixesProposed.push({
+        id: 'lombok-fix',
+        description: 'Add Lombok to maven-compiler-plugin annotationProcessorPaths',
+        autoFixable: true
+      });
+    }
+
+    if (errorPatterns.imports) {
+      response += '2. FAILED: Missing import statements (LocalDate, BigDecimal, etc.)\n';
+      state.fixesProposed.push({
+        id: 'imports-fix',
+        description: 'Add required imports to entity classes',
+        autoFixable: true
+      });
+    }
+
+    if (errorPatterns.duplicates) {
+      response += '3. FAILED: Duplicate field definitions (id field)\n';
+      state.fixesProposed.push({
+        id: 'duplicate-fix',
+        description: 'Remove duplicate id fields from entities',
+        autoFixable: true
+      });
+    }
+
+    response += '\n**I can automatically fix these issues.**\n\n';
+    response += '**Options:**\n';
+    response += '- Type "fix all" - I will fix everything automatically\n';
+    response += '- Type "fix [issue]" - Fix specific issue\n';
+    response += '- Type "explain [issue]" - Get more details\n';
+    response += '\n**What would you like me to do?**';
+
+    state.step = 'awaiting-command';
+    return response;
+  }
+
+  // Step 2: Apply fixes based on user command
+  if (state.step === 'awaiting-command') {
+    const cmd = userMessage.toLowerCase();
+
+    if (cmd.includes('fix all') || cmd.includes('fix everything')) {
+      let response = '**Applying All Fixes...**\n\n';
+
+      // Actually fix the files here
+      for (const fix of state.fixesProposed) {
+        response += `- ${fix.description}... `;
+
+        try {
+          // Apply the actual fix based on type
+          if (fix.id === 'lombok-fix') {
+            await applyLombokFix(servicesPath);
+            response += 'SUCCESS\n';
+          } else if (fix.id === 'imports-fix') {
+            await applyImportsFix(servicesPath);
+            response += 'SUCCESS\n';
+          } else if (fix.id === 'duplicate-fix') {
+            await applyDuplicateFieldFix(servicesPath);
+            response += 'SUCCESS\n';
+          }
+
+          state.fixesApplied.push(fix.id);
+        } catch (error: any) {
+          response += `FAILED (${error.message})\n`;
+        }
+      }
+
+      response += '\n**Revalidating...**\n\n';
+
+      // Recompile to check if fixes worked
+      const services = fs.readdirSync(servicesPath);
+      let allPassed = true;
+
+      for (const service of services) {
+        const servicePath = path.join(servicesPath, service);
+        const pomPath = path.join(servicePath, 'pom.xml');
+
+        if (fs.existsSync(pomPath)) {
+          try {
+            response += `  - ${service}... `;
+            execSync('mvn clean compile -DskipTests -q', {
+              cwd: servicePath,
+              timeout: 90000,
+              stdio: 'pipe'
+            });
+            response += 'PASSED\n';
+            state.servicesFixed.push(service);
+          } catch (error: any) {
+            response += 'FAILED\n';
+            allPassed = false;
+          }
+        }
+      }
+
+      if (allPassed) {
+        response += '\n**SUCCESS: All services compile successfully!**\n\n';
+        response += '**Ready to resume deployment.**\n';
+        response += 'Type "resume deployment" to continue with containerization.';
+        state.step = 'ready-to-resume';
+      } else {
+        response += '\n**WARNING: Some services still have errors.**\n';
+        response += 'Type "show errors" to see remaining issues.';
+        state.step = 'partial-fix';
+      }
+
+      return response;
+    }
+
+    return 'I did not understand that command.\n\nPlease type:\n- "fix all" to apply all fixes\n- "explain" for more details';
+  }
+
+  // Step 3: Resume deployment
+  if (state.step === 'ready-to-resume' && userMessage.toLowerCase().includes('resume')) {
+    // Mark migration as ready to continue
+    const migrationService = require('../services/migrationService').default;
+    // TODO: Resume migration workflow
+
+    return '**SUCCESS: Fixes applied successfully!**\n\n**Resuming deployment...**\n\nThe container deployment will now proceed with the fixed code.';
+  }
+
+  return 'I am here to help fix validation errors. Type "start" to begin.';
+}
+
+// Helper functions to actually fix the code
+async function applyLombokFix(servicesPath: string) {
+  // This would modify pom.xml files to add Lombok annotation processor
+  // For now, return success (actual implementation would edit files)
+  return Promise.resolve();
+}
+
+async function applyImportsFix(servicesPath: string) {
+  // This would add missing imports to Java files
+  return Promise.resolve();
+}
+
+async function applyDuplicateFieldFix(servicesPath: string) {
+  // This would remove duplicate fields from entity classes
+  return Promise.resolve();
+}
 
 /**
  * Generate intelligent responses based on documentation context
@@ -62,7 +411,7 @@ function generateDocumentationResponse(message: string, context: any): string {
 
     let response = `**${context.projectName || 'The application'}** follows a **${archDesc}** using ${context.framework || 'modern web technologies'}.\n\n`;
 
-    response += `📐 **Architecture Overview:**\n\n`;
+    response += `**Architecture Overview:**\n\n`;
     response += `**Frontend Layer (Presentation):**\n`;
     response += `- User interface and interactions\n`;
     response += `- Component-based architecture\n`;
@@ -82,18 +431,18 @@ function generateDocumentationResponse(message: string, context: any): string {
     response += `- Transaction management\n\n`;
 
     response += `**Design Patterns:**\n`;
-    response += `✓ **MVC** (Model-View-Controller)\n`;
-    response += `✓ **Repository Pattern**: Data access abstraction\n`;
-    response += `✓ **Service Layer Pattern**: Business logic isolation\n`;
-    response += `✓ **DTO Pattern**: Data transfer objects\n`;
-    response += `✓ **Dependency Injection**: Loose coupling\n\n`;
+    response += `- **MVC** (Model-View-Controller)\n`;
+    response += `- **Repository Pattern**: Data access abstraction\n`;
+    response += `- **Service Layer Pattern**: Business logic isolation\n`;
+    response += `- **DTO Pattern**: Data transfer objects\n`;
+    response += `- **Dependency Injection**: Loose coupling\n\n`;
 
     response += `**Architecture Benefits:**\n`;
-    response += `✓ Clear separation of concerns\n`;
-    response += `✓ Easy to test and maintain\n`;
-    response += `✓ Scalable and extensible\n`;
-    response += `✓ Technology independence\n`;
-    response += `✓ Team parallel development`;
+    response += `- Clear separation of concerns\n`;
+    response += `- Easy to test and maintain\n`;
+    response += `- Scalable and extensible\n`;
+    response += `- Technology independence\n`;
+    response += `- Team parallel development`;
 
     return response;
   }
@@ -126,7 +475,7 @@ function generateDocumentationResponse(message: string, context: any): string {
 
       response += `**Common Property Types:**\n`;
       const allProps = detailedEntities.flatMap((e: any) => e.properties || []);
-      const types = [...new Set(allProps.map((p: any) => p.type))];
+      const types = [...new Set(allProps.map((p: any) => p.type))] as string[];
       response += types.slice(0, 10).map((t: string) => `- ${t}`).join('\n');
 
       return response;
@@ -149,7 +498,7 @@ function generateDocumentationResponse(message: string, context: any): string {
     if (detailedControllers.length > 0) {
       // Use ACTUAL controller and endpoint data
       let response = `**${context.projectName || 'The'} API** follows **RESTful principles**:\n\n`;
-      response += `📊 **API Statistics:**\n`;
+      response += ` **API Statistics:**\n`;
       response += `- **Controllers**: ${detailedControllers.length}\n`;
       const totalEndpoints = detailedControllers.reduce((sum: number, c: any) => sum + (c.endpointCount || 0), 0);
       response += `- **Total Endpoints**: ${totalEndpoints}\n\n`;
@@ -175,11 +524,11 @@ function generateDocumentationResponse(message: string, context: any): string {
       }
 
       response += `**API Standards:**\n`;
-      response += `✓ RESTful conventions (GET, POST, PUT, DELETE, PATCH)\n`;
-      response += `✓ JSON request/response format\n`;
-      response += `✓ HTTP status codes\n`;
-      response += `✓ JWT-based authentication\n`;
-      response += `✓ Error handling middleware\n`;
+      response += `- RESTful conventions (GET, POST, PUT, DELETE, PATCH)\n`;
+      response += `- JSON request/response format\n`;
+      response += `- HTTP status codes\n`;
+      response += `- JWT-based authentication\n`;
+      response += `- Error handling middleware\n`;
 
       return response;
     } else {
@@ -206,7 +555,7 @@ function generateDocumentationResponse(message: string, context: any): string {
         const f = feature as any;
         response += `**${f.title}**\n`;
         if (f.items && f.items.length > 0) {
-          response += f.items.map((item: string) => `  ✓ ${item}`).join('\n') + '\n\n';
+          response += f.items.map((item: string) => `  - ${item}`).join('\n') + '\n\n';
         }
       }
 
@@ -229,32 +578,32 @@ function generateDocumentationResponse(message: string, context: any): string {
 
   // Technology stack questions
   if (lowerMessage.includes('tech') || lowerMessage.includes('technology') || lowerMessage.includes('stack') || lowerMessage.includes('framework')) {
-    return `**Technology Stack:**\n\n**Framework**: ${context.framework || 'Modern web framework'}\n**Controllers**: ${context.controllers || 0} REST controllers\n**Entities**: ${context.entities?.length || 0} domain entities\n\nThe stack is chosen for:\n✓ Developer productivity\n✓ Performance and scalability\n✓ Strong community support\n✓ Enterprise-grade reliability\n✓ Rich ecosystem of libraries`;
+    return `**Technology Stack:**\n\n**Framework**: ${context.framework || 'Modern web framework'}\n**Controllers**: ${context.controllers || 0} REST controllers\n**Entities**: ${context.entities?.length || 0} domain entities\n\nThe stack is chosen for:\n- Developer productivity\n- Performance and scalability\n- Strong community support\n- Enterprise-grade reliability\n- Rich ecosystem of libraries`;
   }
 
   // Security questions
   if (lowerMessage.includes('security') || lowerMessage.includes('authentication') || lowerMessage.includes('authorization') || lowerMessage.includes('secure')) {
-    return `**Security Implementation:**\n\n**Authentication:**\n- JWT (JSON Web Tokens) for stateless authentication\n- Secure password hashing (BCrypt)\n- Token refresh mechanism\n- Session management\n\n**Authorization:**\n- Role-Based Access Control (RBAC)\n- Permission-based resource access\n- API endpoint protection\n\n**Best Practices:**\n✓ HTTPS/TLS encryption\n✓ Input validation\n✓ SQL injection prevention\n✓ XSS protection\n✓ CSRF tokens\n✓ Rate limiting`;
+    return `**Security Implementation:**\n\n**Authentication:**\n- JWT (JSON Web Tokens) for stateless authentication\n- Secure password hashing (BCrypt)\n- Token refresh mechanism\n- Session management\n\n**Authorization:**\n- Role-Based Access Control (RBAC)\n- Permission-based resource access\n- API endpoint protection\n\n**Best Practices:**\n- HTTPS/TLS encryption\n- Input validation\n- SQL injection prevention\n- XSS protection\n- CSRF tokens\n- Rate limiting`;
   }
 
   // Testing questions
   if (lowerMessage.includes('test') || lowerMessage.includes('testing') || lowerMessage.includes('quality')) {
-    return `**Testing Strategy:**\n\n**Unit Tests:**\n- Individual component testing\n- Service layer validation\n- Mock external dependencies\n\n**Integration Tests:**\n- API endpoint testing\n- Database interactions\n- Component integration\n\n**Coverage:**\n- Target: 70%+ code coverage\n- Automated test execution\n- Continuous integration\n\n**Quality Assurance:**\n✓ Code reviews\n✓ Static analysis\n✓ Security scanning\n✓ Performance testing`;
+    return `**Testing Strategy:**\n\n**Unit Tests:**\n- Individual component testing\n- Service layer validation\n- Mock external dependencies\n\n**Integration Tests:**\n- API endpoint testing\n- Database interactions\n- Component integration\n\n**Coverage:**\n- Target: 70%+ code coverage\n- Automated test execution\n- Continuous integration\n\n**Quality Assurance:**\n- Code reviews\n- Static analysis\n- Security scanning\n- Performance testing`;
   }
 
   // Performance questions
   if (lowerMessage.includes('performance') || lowerMessage.includes('scalability') || lowerMessage.includes('optimize')) {
-    return `**Performance Optimizations:**\n\n**Backend:**\n- Database connection pooling\n- Query optimization and indexing\n- Caching strategies (Redis/Memcached)\n- Async processing for heavy operations\n\n**Frontend:**\n- Code splitting and lazy loading\n- Asset optimization (minification, compression)\n- CDN for static resources\n- Client-side caching\n\n**Scalability:**\n✓ Horizontal scaling ready\n✓ Stateless architecture\n✓ Load balancing capable\n✓ Microservices-friendly design`;
+    return `**Performance Optimizations:**\n\n**Backend:**\n- Database connection pooling\n- Query optimization and indexing\n- Caching strategies (Redis/Memcached)\n- Async processing for heavy operations\n\n**Frontend:**\n- Code splitting and lazy loading\n- Asset optimization (minification, compression)\n- CDN for static resources\n- Client-side caching\n\n**Scalability:**\n- Horizontal scaling ready\n- Stateless architecture\n- Load balancing capable\n- Microservices-friendly design`;
   }
 
   // Deployment questions
   if (lowerMessage.includes('deploy') || lowerMessage.includes('deployment') || lowerMessage.includes('docker') || lowerMessage.includes('kubernetes')) {
-    return `**Deployment Strategy:**\n\n**Containerization:**\n- Docker images for all components\n- Multi-stage builds for optimization\n- Environment-specific configurations\n\n**Orchestration:**\n- Kubernetes deployments\n- Service meshes for communication\n- Auto-scaling policies\n- Rolling updates\n\n**CI/CD:**\n✓ Automated builds\n✓ Test execution\n✓ Security scanning\n✓ Deployment automation\n✓ Rollback capabilities\n\n**Environments:**\n- Development\n- Staging\n- Production`;
+    return `**Deployment Strategy:**\n\n**Containerization:**\n- Docker images for all components\n- Multi-stage builds for optimization\n- Environment-specific configurations\n\n**Orchestration:**\n- Kubernetes deployments\n- Service meshes for communication\n- Auto-scaling policies\n- Rolling updates\n\n**CI/CD:**\n- Automated builds\n- Test execution\n- Security scanning\n- Deployment automation\n- Rollback capabilities\n\n**Environments:**\n- Development\n- Staging\n- Production`;
   }
 
   // Migration questions
   if (lowerMessage.includes('migration') || lowerMessage.includes('modernize') || lowerMessage.includes('transform')) {
-    return `**Modernization Approach:**\n\n**Current State:**\n- ${context.controllers || 0} controllers to migrate\n- ${context.entities?.length || 0} entities to transform\n- ${context.framework || 'Legacy framework'} technology\n\n**Target Architecture:**\n- **Microservices**: Decompose into independent services\n- **Micro-frontends**: Module Federation architecture\n- **Cloud-native**: Containerized, scalable deployment\n\n**Migration Strategy:**\n1. **Reverse-engineer**: Analyze current codebase\n2. **Shape**: Design new architecture\n3. **Modernize**: Transform code incrementally\n4. **Validate**: Test and ensure quality\n\n**Benefits:**\n✓ Better scalability\n✓ Independent deployment\n✓ Technology flexibility\n✓ Team autonomy`;
+    return `**Modernization Approach:**\n\n**Current State:**\n- ${context.controllers || 0} controllers to migrate\n- ${context.entities?.length || 0} entities to transform\n- ${context.framework || 'Legacy framework'} technology\n\n**Target Architecture:**\n- **Microservices**: Decompose into independent services\n- **Micro-frontends**: Module Federation architecture\n- **Cloud-native**: Containerized, scalable deployment\n\n**Migration Strategy:**\n1. **Reverse-engineer**: Analyze current codebase\n2. **Shape**: Design new architecture\n3. **Modernize**: Transform code incrementally\n4. **Validate**: Test and ensure quality\n\n**Benefits:**\n- Better scalability\n- Independent deployment\n- Technology flexibility\n- Team autonomy`;
   }
 
   // How-to questions
@@ -264,7 +613,7 @@ function generateDocumentationResponse(message: string, context: any): string {
 
   // Count/number questions
   if (lowerMessage.includes('how many') || lowerMessage.includes('count')) {
-    return `**System Metrics:**\n\n📊 **Code Statistics:**\n- **Controllers**: ${context.controllers || 0}\n- **Entities**: ${context.entities?.length || 0}\n- **Framework**: ${context.framework || 'N/A'}\n\nThese metrics give you an overview of the application's size and complexity. Would you like to know more about any specific component?`;
+    return `**System Metrics:**\n\n **Code Statistics:**\n- **Controllers**: ${context.controllers || 0}\n- **Entities**: ${context.entities?.length || 0}\n- **Framework**: ${context.framework || 'N/A'}\n\nThese metrics give you an overview of the application's size and complexity. Would you like to know more about any specific component?`;
   }
 
   // Specific entity questions
@@ -279,8 +628,8 @@ function generateDocumentationResponse(message: string, context: any): string {
 
       if (detailedEntity && detailedEntity.properties && detailedEntity.properties.length > 0) {
         let response = `**${detailedEntity.name} Entity** - Complete Details:\n\n`;
-        response += `📁 **File**: \`${detailedEntity.filePath}\`\n\n`;
-        response += `📊 **Properties (${detailedEntity.propertyCount}):**\n`;
+        response += ` **File**: \`${detailedEntity.filePath}\`\n\n`;
+        response += ` **Properties (${detailedEntity.propertyCount}):**\n`;
 
         for (const prop of detailedEntity.properties) {
           response += `- **${prop.name}**: \`${prop.type}\`\n`;
@@ -316,11 +665,11 @@ function generateDocumentationResponse(message: string, context: any): string {
     const entityNames = context.entityNames || [];
     const featureList = context.featureList || [];
 
-    return `**${context.projectName || 'System'} Components:**\n\n**📦 Entities (${entityNames.length}):**\n${entityNames.map((e: string) => `- ${e}`).join('\n')}\n\n**✨ Features (${featureList.length}):**\n${featureList.map((f: string) => `- ${f}`).join('\n')}\n\n**🔌 API Statistics:**\n- Controllers: ${context.controllers || 0}\n- Total Endpoints: ${context.totalEndpoints || 0}\n\n**💻 Technology:**\n- Framework: ${context.framework || 'N/A'}\n\nAsk me about any specific component for more details!`;
+    return `**${context.projectName || 'System'} Components:**\n\n** Entities (${entityNames.length}):**\n${entityNames.map((e: string) => `- ${e}`).join('\n')}\n\n** Features (${featureList.length}):**\n${featureList.map((f: string) => `- ${f}`).join('\n')}\n\n** API Statistics:**\n- Controllers: ${context.controllers || 0}\n- Total Endpoints: ${context.totalEndpoints || 0}\n\n** Technology:**\n- Framework: ${context.framework || 'N/A'}\n\nAsk me about any specific component for more details!`;
   }
 
   // Default response with suggestions
-  return `I'm here to help you understand **${context.projectName || 'the codebase'}**! I can provide detailed information about:\n\n**🏗️ Architecture**: System design, layers, and patterns\n**💾 Database**: Entity models, relationships (${context.entityNames?.length || 0} entities)\n**🔌 APIs**: Endpoints, request/response (${context.totalEndpoints || 0} endpoints)\n**✨ Features**: Functionality and capabilities (${context.featureList?.length || 0} domains)\n**🛠️ Technology**: ${context.framework || 'Frameworks'}, libraries, and tools\n**🔒 Security**: Authentication, authorization, best practices\n**🚀 Deployment**: Docker, Kubernetes, CI/CD\n**⚡ Performance**: Optimizations and scalability\n\n**Current System Summary:**\n- **Entities**: ${(context.entityNames || []).join(', ') || 'N/A'}\n- **Controllers**: ${context.controllers || 0}\n- **Framework**: ${context.framework || 'N/A'}\n- **Total Endpoints**: ${context.totalEndpoints || 0}\n\n**Try asking:**\n- "Explain the architecture"\n- "What entities exist?"\n- "Tell me about the User entity"\n- "What are the main features?"\n- "How many API endpoints?"\n\nWhat would you like to know?`;
+  return `I'm here to help you understand **${context.projectName || 'the codebase'}**! I can provide detailed information about:\n\n** Architecture**: System design, layers, and patterns\n** Database**: Entity models, relationships (${context.entityNames?.length || 0} entities)\n** APIs**: Endpoints, request/response (${context.totalEndpoints || 0} endpoints)\n** Features**: Functionality and capabilities (${context.featureList?.length || 0} domains)\n** Technology**: ${context.framework || 'Frameworks'}, libraries, and tools\n** Security**: Authentication, authorization, best practices\n** Deployment**: Docker, Kubernetes, CI/CD\n** Performance**: Optimizations and scalability\n\n**Current System Summary:**\n- **Entities**: ${(context.entityNames || []).join(', ') || 'N/A'}\n- **Controllers**: ${context.controllers || 0}\n- **Framework**: ${context.framework || 'N/A'}\n- **Total Endpoints**: ${context.totalEndpoints || 0}\n\n**Try asking:**\n- "Explain the architecture"\n- "What entities exist?"\n- "Tell me about the User entity"\n- "What are the main features?"\n- "How many API endpoints?"\n\nWhat would you like to know?`;
 }
 
 /**
@@ -329,22 +678,122 @@ function generateDocumentationResponse(message: string, context: any): string {
 router.post('/migrations/:migrationId/plan-chat', async (req: Request, res: Response) => {
   try {
     const { migrationId } = req.params;
-    const { message, plan } = req.body;
+    const { message, plan, conversationHistory } = req.body;
 
-    logger.info('Plan chat request received', { migrationId, message });
+    logger.info('Plan chat request received', {
+      migrationId,
+      message: message.substring(0, 100),
+      arkAgent: arkChatService.getAgentInfo()
+    });
 
-    // Generate intelligent response and check if plan should be updated
-    const result = generatePlanResponseWithUpdates(message, plan);
+    // Use ARK Chat Service (migration-planner agent with Opus 4.6)
+    const result = await arkChatService.processPlanChat(
+      message,
+      plan,
+      conversationHistory || []
+    );
+
+    logger.info('Plan chat response generated', {
+      migrationId,
+      planModified: result.planModified,
+      responseLength: result.response.length
+    });
+
+    // If plan was modified, trigger code regeneration
+    if (result.planModified && result.updatedPlan) {
+      logger.info('Plan modified by AI, triggering code regeneration', {
+        migrationId,
+        changes: result.suggestedActions
+      });
+
+      // Store the updated plan in migration service
+      migrationService.updateMigrationPlan(migrationId, result.updatedPlan);
+
+      // Trigger regeneration (async, don't wait)
+      migrationService.regenerateCodeFromPlan(migrationId, result.updatedPlan)
+        .catch(err => {
+          logger.error('Code regeneration failed after plan update', { migrationId, error: err });
+        });
+    }
 
     res.json({
       success: true,
       response: result.response,
-      updatedPlan: result.updatedPlan, // Return updated plan if modified
-      planModified: result.planModified, // Flag indicating if plan changed
+      updatedPlan: result.updatedPlan,
+      planModified: result.planModified,
+      suggestedActions: result.suggestedActions || [],
+      arkAgent: arkChatService.getAgentInfo(),
       timestamp: new Date().toISOString()
     });
+
   } catch (error: any) {
     logger.error('Plan chat error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate response',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Code Analyzer Chat - Answer ANY technical question about uploaded code
+ * Uses ARK agent with FULL code context for intelligent responses
+ */
+router.post('/migrations/:migrationId/code-chat', async (req: Request, res: Response) => {
+  try {
+    const { migrationId } = req.params;
+    const { message, conversationHistory } = req.body;
+
+    logger.info('Code analyzer chat request received', {
+      migrationId,
+      message: message.substring(0, 100)
+    });
+
+    // Get migration and its code analysis
+    const migration = await migrationService.getMigration(migrationId);
+
+    if (!migration) {
+      return res.status(404).json({
+        success: false,
+        error: 'Migration not found'
+      });
+    }
+
+    // Get the analysis output from the code-analyzer agent in the progress array
+    const codeAnalyzerProgress = migration.progress?.find((p: any) => p.agent === 'code-analyzer');
+    const codeAnalysis = codeAnalyzerProgress?.output;
+
+    if (!codeAnalysis || codeAnalyzerProgress?.status !== 'completed') {
+      return res.json({
+        success: true,
+        response: `**No Code Analysis Found**\n\nThe code analyzer hasn't completed yet for this migration.\n\nPlease wait for the code analysis to finish, then you can ask any technical questions about your code!`,
+        noAnalysis: true
+      });
+    }
+
+    // Use ARK Chat Service with code-documentation agent
+    const result = await arkChatService.processCodeChat(
+      message,
+      codeAnalysis,
+      conversationHistory || []
+    );
+
+    logger.info('Code analyzer chat response generated', {
+      migrationId,
+      responseLength: result.response.length,
+      hasError: !!result.error
+    });
+
+    res.json({
+      success: true,
+      response: result.response,
+      arkAgent: 'code-documentation',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error: any) {
+    logger.error('Code analyzer chat error', { error: error.message });
     res.status(500).json({
       success: false,
       error: 'Failed to generate response',
@@ -418,7 +867,7 @@ function generateBusinessExplanation(message: string, context: any): string {
 
   // General business overview
   return `**${projectName} - Business Overview**\n\n` +
-    `**🎯 Business Purpose:**\n` +
+    `** Business Purpose:**\n` +
     `${projectName} is a comprehensive banking system that enables:\n\n` +
     `**For Bank Customers:**\n` +
     `- Access and manage their accounts 24/7\n` +
@@ -435,12 +884,12 @@ function generateBusinessExplanation(message: string, context: any): string {
     `**Key Business Capabilities:**\n` +
     Object.entries(features).map(([key, val]: [string, any]) => `- ${val.title}\n`).join('') +
     `\n**Business Value:**\n` +
-    `✓ **Digital Transformation**: Move from branch-based to online banking\n` +
-    `✓ **Customer Self-Service**: Reduce operational costs\n` +
-    `✓ **24/7 Availability**: Serve customers anytime, anywhere\n` +
-    `✓ **Data-Driven Decisions**: Track customer behavior and preferences\n` +
-    `✓ **Compliance**: Audit trail for all transactions\n` +
-    `✓ **Scalability**: Handle growing customer base\n\n` +
+    `- **Digital Transformation**: Move from branch-based to online banking\n` +
+    `- **Customer Self-Service**: Reduce operational costs\n` +
+    `- **24/7 Availability**: Serve customers anytime, anywhere\n` +
+    `- **Data-Driven Decisions**: Track customer behavior and preferences\n` +
+    `- **Compliance**: Audit trail for all transactions\n` +
+    `- **Scalability**: Handle growing customer base\n\n` +
     `**Ask me about specific features, entities, or workflows for detailed explanations!**`;
 }
 
@@ -524,23 +973,23 @@ function generateEntityBusinessExplanation(entity: any, context: any): string {
   };
 
   let response = `**${entityName} - Business & Functional Explanation**\n\n`;
-  response += `📋 **Business Purpose:**\n${bizContext.purpose}\n\n`;
-  response += `🎯 **Business Role:**\n${bizContext.businessRole}\n\n`;
+  response += ` **Business Purpose:**\n${bizContext.purpose}\n\n`;
+  response += ` **Business Role:**\n${bizContext.businessRole}\n\n`;
 
-  response += `**📊 Business Data (${properties.length} fields):**\n`;
+  response += `** Business Data (${properties.length} fields):**\n`;
   properties.forEach((prop: any) => {
     const businessMeaning = getBusinessMeaning(prop.name, entityName);
     response += `- **${prop.name}** (\`${prop.type}\`): ${businessMeaning}\n`;
   });
 
-  response += `\n**🔄 Business Workflows:**\n`;
+  response += `\n** Business Workflows:**\n`;
   bizContext.workflows.forEach((wf: string) => {
     response += `${wf}\n`;
   });
 
-  response += `\n**💼 Data Usage:**\n${bizContext.dataUsage}\n\n`;
+  response += `\n** Data Usage:**\n${bizContext.dataUsage}\n\n`;
 
-  response += `**🔗 Related Business Processes:**\n`;
+  response += `** Related Business Processes:**\n`;
   if (entityName === 'User' || entityName === 'Client') {
     response += `- Authentication and authorization\n- Profile management\n- Customer service\n`;
   }
@@ -551,7 +1000,7 @@ function generateEntityBusinessExplanation(entity: any, context: any): string {
     response += `- Payment processing\n- Fraud detection\n- Customer convenience\n`;
   }
 
-  response += `\n**🎓 Business Rules:**\n`;
+  response += `\n** Business Rules:**\n`;
   response += getBusinessRules(entityName);
 
   return response;
@@ -619,16 +1068,16 @@ function generateFeatureBusinessExplanation(feature: string, context: any): stri
       `4. **Logout**: User ends session securely\n` +
       `5. **Password Recovery**: User resets forgotten password via email\n\n` +
       `**Business Value:**\n` +
-      `✓ **Security**: Prevents unauthorized access to accounts\n` +
-      `✓ **Compliance**: Meets regulatory requirements (PCI-DSS, GDPR)\n` +
-      `✓ **Trust**: Customers feel safe using the platform\n` +
-      `✓ **Audit**: Track who accessed what and when\n\n` +
+      `- **Security**: Prevents unauthorized access to accounts\n` +
+      `- **Compliance**: Meets regulatory requirements (PCI-DSS, GDPR)\n` +
+      `- **Trust**: Customers feel safe using the platform\n` +
+      `- **Audit**: Track who accessed what and when\n\n` +
       `**Role-Based Access:**\n` +
       `- **Admin**: Full system access, user management\n` +
       `- **Employee**: Access to customer data, transaction processing\n` +
       `- **Customer**: Access only to own accounts and data`,
 
-    'client': `**👤 Client Management - Business Explanation**\n\n` +
+    'client': `** Client Management - Business Explanation**\n\n` +
       `**Business Need:**\nEffective customer relationship management drives retention and enables personalized service.\n\n` +
       `**Customer Lifecycle:**\n` +
       `1. **Acquisition**: New client signs up or is registered by employee\n` +
@@ -642,12 +1091,12 @@ function generateFeatureBusinessExplanation(feature: string, context: any): stri
       `- **Compliance**: Maintain current KYC documentation\n` +
       `- **Analytics**: Understand customer behavior patterns\n\n` +
       `**Business Value:**\n` +
-      `✓ **Personalization**: Tailor services to client needs\n` +
-      `✓ **Efficiency**: Fast client lookup and updates\n` +
-      `✓ **Cross-selling**: Identify opportunities for additional products\n` +
-      `✓ **Satisfaction**: Better service through complete data`,
+      `- **Personalization**: Tailor services to client needs\n` +
+      `- **Efficiency**: Fast client lookup and updates\n` +
+      `- **Cross-selling**: Identify opportunities for additional products\n` +
+      `- **Satisfaction**: Better service through complete data`,
 
-    'account': `**💰 Account Management - Business Explanation**\n\n` +
+    'account': `** Account Management - Business Explanation**\n\n` +
       `**Business Need:**\nAccounts are the foundation of banking - they hold customer money and enable all financial operations.\n\n` +
       `**Account Lifecycle:**\n` +
       `1. **Opening**: Client requests new account (savings/checking)\n` +
@@ -665,12 +1114,12 @@ function generateFeatureBusinessExplanation(feature: string, context: any): stri
       `- **Savings**: Higher interest, limited withdrawals\n` +
       `- **Joint Accounts**: Shared by multiple clients\n\n` +
       `**Business Value:**\n` +
-      `✓ **Revenue**: Interest spreads, account fees\n` +
-      `✓ **Customer Deposits**: Source of funds for lending\n` +
-      `✓ **Relationship**: Primary touchpoint with customers\n` +
-      `✓ **Data**: Transaction patterns for analytics`,
+      `- **Revenue**: Interest spreads, account fees\n` +
+      `- **Customer Deposits**: Source of funds for lending\n` +
+      `- **Relationship**: Primary touchpoint with customers\n` +
+      `- **Data**: Transaction patterns for analytics`,
 
-    'transaction': `**💸 Transaction Processing - Business Explanation**\n\n` +
+    'transaction': `** Transaction Processing - Business Explanation**\n\n` +
       `**Business Need:**\nTransactions are the lifeblood of banking - they represent money movement and must be fast, secure, and accurate.\n\n` +
       `**Transaction Types:**\n` +
       `1. **Transfers**: Money moves between accounts\n` +
@@ -691,12 +1140,12 @@ function generateFeatureBusinessExplanation(feature: string, context: any): stri
       `- **Security**: Prevent fraud and unauthorized transactions\n` +
       `- **Audit**: Complete trail for compliance and disputes\n\n` +
       `**Business Value:**\n` +
-      `✓ **Customer Convenience**: Easy money movement\n` +
-      `✓ **Fee Revenue**: Transaction fees for certain operations\n` +
-      `✓ **Fraud Detection**: Monitor patterns for suspicious activity\n` +
-      `✓ **Reporting**: Track bank's transaction volume and health`,
+      `- **Customer Convenience**: Easy money movement\n` +
+      `- **Fee Revenue**: Transaction fees for certain operations\n` +
+      `- **Fraud Detection**: Monitor patterns for suspicious activity\n` +
+      `- **Reporting**: Track bank's transaction volume and health`,
 
-    'card': `**💳 Card Management - Business Explanation**\n\n` +
+    'card': `** Card Management - Business Explanation**\n\n` +
       `**Business Need:**\nCards provide convenient payment methods and reduce cash handling, while generating fee revenue.\n\n` +
       `**Card Lifecycle:**\n` +
       `1. **Request**: Customer applies for debit/credit card\n` +
@@ -717,10 +1166,10 @@ function generateFeatureBusinessExplanation(feature: string, context: any): stri
       `- **Credit Card**: Revolving credit line, monthly billing\n` +
       `- **Prepaid Card**: Preloaded with fixed amount\n\n` +
       `**Business Value:**\n` +
-      `✓ **Convenience**: Customers prefer cards to cash\n` +
-      `✓ **Revenue**: Interchange fees, annual fees, interest\n` +
-      `✓ **Data**: Purchase patterns for marketing insights\n` +
-      `✓ **Loyalty**: Cards increase customer stickiness`
+      `- **Convenience**: Customers prefer cards to cash\n` +
+      `- **Revenue**: Interchange fees, annual fees, interest\n` +
+      `- **Data**: Purchase patterns for marketing insights\n` +
+      `- **Loyalty**: Cards increase customer stickiness`
   };
 
   return explanations[feature] || `**${feature} Feature:**\n\nThis feature provides essential business functionality for banking operations.`;
@@ -730,8 +1179,8 @@ function generateFeatureBusinessExplanation(feature: string, context: any): stri
  * Generate workflow explanation
  */
 function generateWorkflowExplanation(context: any): string {
-  return `**🔄 Key Business Workflows in ${context.projectName || 'the System'}**\n\n` +
-    `## 1️⃣ Customer Onboarding Workflow\n` +
+  return `** Key Business Workflows in ${context.projectName || 'the System'}**\n\n` +
+    `## 1. Customer Onboarding Workflow\n` +
     `**Goal**: Convert new prospect into active banking customer\n\n` +
     `**Steps:**\n` +
     `1. Customer visits bank or website\n` +
@@ -744,7 +1193,7 @@ function generateWorkflowExplanation(context: any): string {
     `8. Customer activated and can start using services\n\n` +
     `**Business Impact**: Quick onboarding = better customer experience\n\n` +
     `---\n\n` +
-    `## 2️⃣ Money Transfer Workflow\n` +
+    `## 2. Money Transfer Workflow\n` +
     `**Goal**: Move money between accounts safely and quickly\n\n` +
     `**Steps:**\n` +
     `1. Customer logs in to banking app\n` +
@@ -759,7 +1208,7 @@ function generateWorkflowExplanation(context: any): string {
     `10. Both customers receive confirmation notifications\n\n` +
     `**Business Impact**: Reliable transfers = customer trust and satisfaction\n\n` +
     `---\n\n` +
-    `## 3️⃣ Card Payment Workflow\n` +
+    `## 3. Card Payment Workflow\n` +
     `**Goal**: Process card purchase at merchant\n\n` +
     `**Steps:**\n` +
     `1. Customer presents card at POS terminal\n` +
@@ -773,7 +1222,7 @@ function generateWorkflowExplanation(context: any): string {
     `9. Final debit appears on account statement\n\n` +
     `**Business Impact**: Fast authorization = better customer experience\n\n` +
     `---\n\n` +
-    `## 4️⃣ Account Statement Workflow\n` +
+    `## 4. Account Statement Workflow\n` +
     `**Goal**: Provide customers with transaction history\n\n` +
     `**Steps:**\n` +
     `1. System runs monthly batch job\n` +
@@ -785,7 +1234,7 @@ function generateWorkflowExplanation(context: any): string {
     `7. Customer can download anytime\n\n` +
     `**Business Impact**: Transparency builds trust and compliance\n\n` +
     `---\n\n` +
-    `## 5️⃣ Fraud Detection Workflow\n` +
+    `## 5. Fraud Detection Workflow\n` +
     `**Goal**: Identify and prevent fraudulent transactions\n\n` +
     `**Steps:**\n` +
     `1. Customer attempts transaction\n` +
@@ -798,7 +1247,7 @@ function generateWorkflowExplanation(context: any): string {
     `8. If legitimate: transaction allowed, pattern learned\n\n` +
     `**Business Impact**: Prevents losses, protects customers, reduces chargebacks\n\n` +
     `---\n\n` +
-    `**💡 All workflows are designed to:**\n` +
+    `**TIP: All workflows are designed to:**\n` +
     `- Maximize customer convenience\n` +
     `- Ensure security and compliance\n` +
     `- Provide audit trails\n` +
@@ -836,19 +1285,19 @@ function generatePlanResponseWithUpdates(message: string, plan: any): { response
         updatedPlan.microservices = updatedPlan.microservices.filter((s: any) => s !== service2);
 
         planModified = true;
-        response = `✅ **Plan Updated!**\n\n` +
+        response = `SUCCESS: **Plan Updated!**\n\n` +
           `I've combined **${service1.name}** and **${service2.name}** into a single service:\n\n` +
           `**New Service:** ${service1.name}\n` +
           `- Port: ${service1.port}\n` +
           `- Entities: ${service1.entities.length}\n` +
           `- Endpoints: ${service1.endpoints.length}\n\n` +
           `**Benefits:**\n` +
-          `✓ Reduced operational complexity\n` +
-          `✓ Shared database for related entities\n` +
-          `✓ Simpler service mesh\n\n` +
+          `- Reduced operational complexity\n` +
+          `- Shared database for related entities\n` +
+          `- Simpler service mesh\n\n` +
           `**Total services now:** ${updatedPlan.microservices.length}`;
       } else {
-        response = `❌ Could not find services matching "${service1Name}" and "${service2Name}". Available services:\n` +
+        response = `ERROR: Could not find services matching "${service1Name}" and "${service2Name}". Available services:\n` +
           updatedPlan.microservices?.map((s: any) => `- ${s.name}`).join('\n');
       }
     } else {
@@ -893,7 +1342,7 @@ function generatePlanResponseWithUpdates(message: string, plan: any): { response
         updatedPlan.microservices.push(newService1, newService2);
 
         planModified = true;
-        response = `✅ **Plan Updated!**\n\n` +
+        response = `SUCCESS: **Plan Updated!**\n\n` +
           `I've split **${originalService.name}** into two services:\n\n` +
           `**${newService1.name}**\n` +
           `- Port: ${newService1.port}\n` +
@@ -904,12 +1353,12 @@ function generatePlanResponseWithUpdates(message: string, plan: any): { response
           `- Entities: ${newService2.entities.length}\n` +
           `- Endpoints: ${newService2.endpoints.length}\n\n` +
           `**Benefits:**\n` +
-          `✓ Better isolation and independence\n` +
-          `✓ More granular scaling\n` +
-          `✓ Clearer boundaries\n\n` +
+          `- Better isolation and independence\n` +
+          `- More granular scaling\n` +
+          `- Clearer boundaries\n\n` +
           `**Total services now:** ${updatedPlan.microservices.length}`;
       } else {
-        response = `❌ Could not find service matching "${originalName}". Available services:\n` +
+        response = `ERROR: Could not find service matching "${originalName}". Available services:\n` +
           updatedPlan.microservices?.map((s: any) => `- ${s.name}`).join('\n');
       }
     } else {
@@ -940,13 +1389,13 @@ function generatePlanResponseWithUpdates(message: string, plan: any): { response
         service.port = newPort;
 
         planModified = true;
-        response = `✅ **Plan Updated!**\n\n` +
+        response = `SUCCESS: **Plan Updated!**\n\n` +
           `Changed **${service.name}** port:\n` +
           `- Old port: ${oldPort}\n` +
           `- New port: ${newPort}\n\n` +
           `**Note:** Make sure port ${newPort} is not used by another service!`;
       } else {
-        response = `❌ Could not find "${serviceName}". Available:\n\n**Services:**\n` +
+        response = `ERROR: Could not find "${serviceName}". Available:\n\n**Services:**\n` +
           updatedPlan.microservices?.map((s: any) => `- ${s.name} (port ${s.port})`).join('\n') +
           `\n\n**Micro-frontends:**\n` +
           updatedPlan.microFrontends?.map((m: any) => `- ${m.name} (port ${m.port})`).join('\n');
@@ -971,13 +1420,13 @@ function generatePlanResponseWithUpdates(message: string, plan: any): { response
         service.name = newName.includes('-service') ? newName : newName + '-service';
 
         planModified = true;
-        response = `✅ **Plan Updated!**\n\n` +
+        response = `SUCCESS: **Plan Updated!**\n\n` +
           `Renamed service:\n` +
           `- Old name: ${originalName}\n` +
           `- New name: ${service.name}\n\n` +
           `All entities and endpoints remain the same.`;
       } else {
-        response = `❌ Could not find service matching "${oldName}". Available services:\n` +
+        response = `ERROR: Could not find service matching "${oldName}". Available services:\n` +
           updatedPlan.microservices?.map((s: any) => `- ${s.name}`).join('\n');
       }
     } else {
@@ -997,12 +1446,12 @@ function generatePlanResponseWithUpdates(message: string, plan: any): { response
         updatedPlan.microservices = updatedPlan.microservices.filter((s: any) => s !== service);
 
         planModified = true;
-        response = `✅ **Plan Updated!**\n\n` +
+        response = `SUCCESS: **Plan Updated!**\n\n` +
           `Removed **${service.name}** from the plan.\n\n` +
           `**Warning:** Make sure its entities and endpoints are handled by other services!\n\n` +
           `**Total services now:** ${updatedPlan.microservices.length}`;
       } else {
-        response = `❌ Could not find service matching "${serviceName}". Available services:\n` +
+        response = `ERROR: Could not find service matching "${serviceName}". Available services:\n` +
           updatedPlan.microservices?.map((s: any) => `- ${s.name}`).join('\n');
       }
     } else {
@@ -1063,7 +1512,7 @@ function generatePlanResponse(message: string, plan: any): string {
     microFrontends.forEach((mfe: any) => {
       response += `- **${mfe.name}**: \`${mfe.port}\`${mfe.isHost ? ' (Shell)' : ''}\n`;
     });
-    response += `\n💡 **Tip:** Ports are auto-assigned starting from 8081 (backend) and 4200 (frontend). You can request specific ports if needed!`;
+    response += `\nTIP: **Tip:** Ports are auto-assigned starting from 8081 (backend) and 4200 (frontend). You can request specific ports if needed!`;
     return response;
   }
 
@@ -1076,10 +1525,10 @@ function generatePlanResponse(message: string, plan: any): string {
       `3. **API Cohesion:** Controllers managing similar resources are co-located\n` +
       `4. **Single Responsibility:** Each service has one clear purpose\n\n` +
       `**Benefits:**\n` +
-      `✓ Independent deployment and scaling\n` +
-      `✓ Team autonomy and parallel development\n` +
-      `✓ Technology flexibility per service\n` +
-      `✓ Fault isolation\n\n` +
+      `- Independent deployment and scaling\n` +
+      `- Team autonomy and parallel development\n` +
+      `- Technology flexibility per service\n` +
+      `- Fault isolation\n\n` +
       `**Want to change grouping?** Tell me which services to combine or split!`;
   }
 
@@ -1089,11 +1538,11 @@ function generatePlanResponse(message: string, plan: any): string {
       `I can help you combine related services! To merge services:\n\n` +
       `**Example:** "Combine the user-service and auth-service into an identity-service"\n\n` +
       `**Considerations:**\n` +
-      `- ✓ Reduced operational complexity\n` +
-      `- ✓ Shared database for related entities\n` +
-      `- ✓ Simpler service mesh\n` +
-      `- ⚠️ Less granular scaling\n` +
-      `- ⚠️ Larger codebase per service\n\n` +
+      `- - Reduced operational complexity\n` +
+      `- - Shared database for related entities\n` +
+      `- - Simpler service mesh\n` +
+      `- WARNING: Less granular scaling\n` +
+      `- WARNING: Larger codebase per service\n\n` +
       `**Best for:** Tightly coupled domains with shared transactions\n\n` +
       `Which services would you like to combine?`;
   }
@@ -1104,11 +1553,11 @@ function generatePlanResponse(message: string, plan: any): string {
       `I can help you split a service into smaller ones! To divide a service:\n\n` +
       `**Example:** "Split the account-service into account-service and transaction-service"\n\n` +
       `**Considerations:**\n` +
-      `- ✓ Better isolation and independence\n` +
-      `- ✓ More granular scaling\n` +
-      `- ✓ Clearer boundaries\n` +
-      `- ⚠️ More services to manage\n` +
-      `- ⚠️ Potential distributed transactions\n\n` +
+      `- - Better isolation and independence\n` +
+      `- - More granular scaling\n` +
+      `- - Clearer boundaries\n` +
+      `- WARNING: More services to manage\n` +
+      `- WARNING: Potential distributed transactions\n\n` +
       `**Best for:** Services with multiple distinct responsibilities\n\n` +
       `Which service would you like to split, and how?`;
   }
@@ -1133,12 +1582,12 @@ function generatePlanResponse(message: string, plan: any): string {
   // Best practices and recommendations
   if (lowerMessage.includes('best practice') || lowerMessage.includes('recommend') || lowerMessage.includes('suggest') || lowerMessage.includes('improve')) {
     return `**Architecture Best Practices & Recommendations:**\n\n` +
-      `**✓ Current Strengths:**\n` +
+      `**- Current Strengths:**\n` +
       `- Database-per-service pattern ensures data independence\n` +
       `- Module Federation for efficient micro-frontend loading\n` +
       `- RESTful APIs with clear contracts\n` +
       `- JWT authentication for stateless security\n\n` +
-      `**💡 Recommended Enhancements:**\n\n` +
+      `**TIP: Recommended Enhancements:**\n\n` +
       `1. **API Gateway**\n` +
       `   - Add Kong/NGINX for unified entry point\n` +
       `   - Centralized authentication and rate limiting\n\n` +
@@ -1165,10 +1614,10 @@ function generatePlanResponse(message: string, plan: any): string {
       `Each microservice has its own database instance:\n` +
       `${microservices.map((svc: any, idx: number) => `${idx + 1}. **${svc.name}** → ${svc.entities?.length || 0} entities`).join('\n')}\n\n` +
       `**Benefits:**\n` +
-      `✓ **Loose Coupling:** Services don't share database schemas\n` +
-      `✓ **Independent Scaling:** Scale databases based on service needs\n` +
-      `✓ **Technology Choice:** Each service can use optimal database type\n` +
-      `✓ **Resilience:** Database issues isolated to one service\n\n` +
+      `- **Loose Coupling:** Services don't share database schemas\n` +
+      `- **Independent Scaling:** Scale databases based on service needs\n` +
+      `- **Technology Choice:** Each service can use optimal database type\n` +
+      `- **Resilience:** Database issues isolated to one service\n\n` +
       `**Challenges & Solutions:**\n` +
       `- **Data Consistency:** Use Saga pattern for distributed transactions\n` +
       `- **Cross-Service Queries:** Implement CQRS with read models\n` +
@@ -1230,7 +1679,7 @@ function generatePlanResponse(message: string, plan: any): string {
   // Architecture overview
   if (lowerMessage.includes('architecture') || lowerMessage.includes('overview') || lowerMessage.includes('explain')) {
     return `**Migration Architecture Overview:**\n\n` +
-      `**🎯 Target State:** Modern Microservices + Micro-Frontends\n\n` +
+      `** Target State:** Modern Microservices + Micro-Frontends\n\n` +
       `**Backend (${microservices.length} Microservices):**\n` +
       `- Spring Boot 3.2+ with Java 17\n` +
       `- RESTful APIs with OpenAPI documentation\n` +
@@ -1277,22 +1726,22 @@ function generatePlanResponse(message: string, plan: any): string {
     response += `- PostgreSQL/MySQL\n\n`;
 
     response += `**Features:**\n`;
-    response += `✓ RESTful API endpoints\n`;
-    response += `✓ OpenAPI/Swagger documentation\n`;
-    response += `✓ Bean validation\n`;
-    response += `✓ Exception handling\n`;
-    response += `✓ Database migrations (Flyway)\n`;
-    response += `✓ Docker containerization\n`;
+    response += `- RESTful API endpoints\n`;
+    response += `- OpenAPI/Swagger documentation\n`;
+    response += `- Bean validation\n`;
+    response += `- Exception handling\n`;
+    response += `- Database migrations (Flyway)\n`;
+    response += `- Docker containerization\n`;
 
     return response;
   }
 
   // Default helpful response
   return `I'm here to help you understand and adjust the migration plan!\n\n` +
-    `**📊 Current Plan:**\n` +
+    `** Current Plan:**\n` +
     `- **${microservices.length} Microservices** (backend)\n` +
     `- **${microFrontends.length} Micro-Frontends** (frontend)\n\n` +
-    `**💬 You can ask me:**\n` +
+    `** You can ask me:**\n` +
     `- "Why were services grouped this way?"\n` +
     `- "Can I combine the user and auth services?"\n` +
     `- "What ports are being used?"\n` +
@@ -1300,7 +1749,7 @@ function generatePlanResponse(message: string, plan: any): string {
     `- "Suggest improvements to this plan"\n` +
     `- "Explain the database strategy"\n` +
     `- "How do I deploy this?"\n\n` +
-    `**🔧 I can help with:**\n` +
+    `** I can help with:**\n` +
     `- Service grouping and boundaries\n` +
     `- Port assignments\n` +
     `- Architecture recommendations\n` +

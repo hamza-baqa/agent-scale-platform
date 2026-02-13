@@ -8,6 +8,8 @@ import { Migration, AgentProgress } from '@/types/migration.types';
 import { formatRelativeTime } from '@/utils/formatting';
 import AgentOutputVisualizer from '@/components/AgentOutputVisualizer';
 
+export const dynamic = 'force-dynamic';
+
 interface ActivityEvent {
   id: string;
   timestamp: Date;
@@ -15,6 +17,15 @@ interface ActivityEvent {
   agent?: string;
   message: string;
   progress?: number;
+}
+
+interface AgentLog {
+  id: string;
+  timestamp: Date;
+  agent: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  message: string;
+  data?: any;
 }
 
 interface WorkflowNode {
@@ -26,7 +37,7 @@ interface WorkflowNode {
   team?: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   position: { x: number; y: number };
-  icon?: string;
+  label?: string;
   systemPrompt?: string;
   tools?: string[];
 }
@@ -35,25 +46,39 @@ interface WorkflowNode {
 const AGENT_CONFIGS: Record<string, any> = {
   'code-analyzer': {
     title: 'Code Analyzer',
-    description: 'Extract entities, services, APIs from legacy code',
-    icon: '🔍',
+    description: 'AI-powered code analysis using ARK agent',
+    label: 'ANALYZE',
     team: 'Step 1: Reverse-engineer',
-    tools: ['file-reader', 'ast-parser', 'code-scanner', 'dependency-analyzer'],
-    systemPrompt: `You are a code analysis expert specializing in Spring Boot and Blazor applications.
-Your task is to analyze the banque-app-main codebase and extract:
-1. All JPA entities and their relationships
-2. Service layer boundaries and business logic
-3. REST API endpoints and contracts
-4. Frontend components and page structure
-5. Security configuration and authentication flows
-6. Database schemas and data models
+    tools: ['ARK Agent', 'AI Analysis', 'Source Code Parser', 'Annotation Extractor'],
+    systemPrompt: `📡 Chargement du prompt système depuis l'agent ARK Kubernetes...
 
-Output a comprehensive JSON report with all findings organized by domain (Auth, Client, Account, Transaction, Card).`,
+✅ Ce prompt analyse BACKEND + FRONTEND en français
+
+Le prompt analyse :
+• Backend : Java, C#, Spring Boot, ASP.NET Core
+  - Entités JPA, endpoints REST, services
+  - Schéma de base de données
+  - Configuration de sécurité
+
+• Frontend : TypeScript, Angular, React, Vue, Blazor
+  - Structure des composants et hiérarchie
+  - Configuration du routing
+  - Gestion d'état (NgRx, Redux, Context)
+  - Composants UI/UX
+  - Intégration frontend-backend
+
+Format de sortie :
+• Markdown professionnel en français
+• Diagrammes Mermaid (ERD, Architecture)
+• Rapport complet avec recommandations
+
+Source : GET /api/repo-migration/code-analyzer-prompt
+(Chargé depuis Kubernetes agent 'code-analyzer')`,
   },
   'migration-planner': {
     title: 'Migration Planner',
     description: 'Create migration blueprint and architecture',
-    icon: '📐',
+    label: 'PLAN',
     team: 'Step 2: Shape',
     tools: ['openapi-generator', 'jpa-schema-generator', 'architecture-validator'],
     systemPrompt: `You are a software architect specializing in microservices and micro-frontends.
@@ -82,7 +107,7 @@ Output a comprehensive migration blueprint in JSON format.`,
   'service-generator': {
     title: 'Service Generator',
     description: 'Generate Spring Boot microservices',
-    icon: '⚙️',
+    label: 'BUILD',
     team: 'Step 3: Modernize',
     tools: ['spring-initializr', 'code-generator', 'file-writer', 'maven-validator'],
     systemPrompt: `You are a Spring Boot expert. Generate production-ready microservices code.
@@ -104,7 +129,7 @@ Use Spring Boot best practices: Constructor injection, proper exception handling
   'frontend-migrator': {
     title: 'Frontend Migrator',
     description: 'Convert to Angular micro-frontends',
-    icon: '🎨',
+    label: 'FRONTEND',
     team: 'Step 3: Modernize',
     tools: ['angular-cli', 'code-converter', 'module-federation', 'npm-validator'],
     systemPrompt: `You are an Angular and Webpack Module Federation expert.
@@ -126,35 +151,129 @@ Migrate the Blazor WebAssembly application to Angular micro-frontends:
 
 Convert Blazor Razor components to Angular TypeScript components.`,
   },
-  'quality-validator': {
-    title: 'Quality Validator',
-    description: 'Validate code quality and security',
-    icon: '✅',
-    team: 'Step 3: Modernize',
-    tools: ['maven-build', 'test-runner', 'sonarqube-scanner', 'owasp-dependency-check'],
-    systemPrompt: `You are a QA and DevOps expert. Validate the generated code:
+  'unit-test-validator': {
+    title: 'Unit Test Validator',
+    description: 'Validate unit tests (Backend & Frontend)',
+    label: 'UNIT TESTS',
+    team: 'Step 4: Testing',
+    tools: ['JUnit 5', 'Mockito', 'Jasmine/Jest', 'TestBed'],
+    systemPrompt: `You are a Unit Testing expert specializing in Java and TypeScript/Angular applications.
 
-1. Build Validation:
-   - Compile all Spring Boot services (mvn clean install)
-   - Build all Angular applications (ng build)
-   - Check for compilation errors
+Your mission: Validate unit test coverage and quality for the generated code.
 
-2. Test Validation:
-   - Run unit tests (mvn test, ng test)
-   - Check code coverage (minimum 70%)
-   - Run integration tests
+1. Backend Unit Tests (Java/Spring Boot):
+   - Run: mvn test
+   - Verify all JUnit 5 tests pass
+   - Check @SpringBootTest, @WebMvcTest, @DataJpaTest annotations
+   - Validate Mockito mocks and service layer tests
 
-3. Security Validation:
-   - Scan dependencies for vulnerabilities
-   - Check for hardcoded secrets
-   - Validate JWT implementation
-   - OWASP security checks
+2. Frontend Unit Tests (Angular/TypeScript):
+   - Run: npm test
+   - Verify component tests pass
+   - Check service tests with mocked HttpClient
+   - Validate pipe and directive tests
 
-4. Code Quality:
-   - SonarQube analysis
-   - Code style checks
+3. Code Coverage Analysis:
+   - Backend: Target minimum 70% coverage
+   - Frontend: Target minimum 70% coverage
 
-Generate a comprehensive quality report with pass/fail status.`,
+Generate a comprehensive report with Error Report section listing all errors in table format.`,
+  },
+  'integration-test-validator': {
+    title: 'Integration Test Validator',
+    description: 'Validate API, Database & Service integration',
+    label: 'INTEGRATION',
+    team: 'Step 4: Testing',
+    tools: ['Spring Boot Test', 'RestAssured', 'TestContainers', 'PostgreSQL'],
+    systemPrompt: `You are an Integration Testing expert specializing in microservices and API testing.
+
+Your mission: Validate integration tests between services, databases, and APIs.
+
+1. Backend Integration Tests:
+   - Run: mvn verify -P integration-tests
+   - Test API endpoints with real HTTP calls
+   - Validate database integration
+   - Verify transaction management and rollback
+
+2. Database Integration:
+   - Test PostgreSQL connection and queries
+   - Validate JPA entity mappings and relationships
+   - Check flyway/liquibase migrations
+
+3. API Contract Testing:
+   - Validate OpenAPI/Swagger specifications
+   - Test request/response schemas
+   - Check HTTP status codes
+   - Verify authentication and authorization
+
+Generate a comprehensive report with Error Report section listing all errors in table format.`,
+  },
+  'e2e-test-validator': {
+    title: 'E2E Test Validator',
+    description: 'Validate complete user workflows & security',
+    label: 'E2E TESTS',
+    team: 'Step 4: Testing',
+    tools: ['Cypress', 'Playwright', 'Lighthouse', 'OWASP ZAP'],
+    systemPrompt: `You are an End-to-End Testing expert specializing in web application testing.
+
+Your mission: Validate the complete user workflow from frontend to backend.
+
+1. Frontend E2E Tests (Cypress/Playwright):
+   - Test complete user journeys
+   - Validate authentication flow
+   - Test critical business workflows (registration, transfers, cards)
+
+2. Performance Testing:
+   - Measure page load times
+   - Check API response times
+   - Validate lazy loading
+
+3. Security Testing:
+   - Validate HTTPS enforcement
+   - Check CORS configuration
+   - Test XSS protection
+   - Verify CSRF tokens
+
+4. Accessibility Testing:
+   - WCAG 2.1 compliance
+   - Keyboard navigation
+   - Screen reader compatibility
+
+Generate a comprehensive report with Error Report section listing all errors in table format.`,
+  },
+  'container-deployer': {
+    title: 'Container Deployer',
+    description: 'Deploy after quality validation passes',
+    label: 'DEPLOY',
+    team: 'Step 4: Deploy & Test',
+    tools: ['docker', 'docker-compose', 'container-orchestration', 'health-checker'],
+    systemPrompt: `You are a DevOps and containerization expert. Deploy the generated application:
+
+1. Container Setup:
+   - Generate Dockerfiles for all services
+   - Create docker-compose.yml configuration
+   - Set up PostgreSQL database container
+   - Configure container networking
+
+2. Image Building:
+   - Build Docker images for microservices
+   - Build Docker images for micro-frontends
+   - Optimize image sizes with multi-stage builds
+   - Tag images appropriately
+
+3. Deployment:
+   - Start all containers with proper dependencies
+   - Configure environment variables
+   - Set up health checks
+   - Ensure service discovery
+
+4. Verification:
+   - Verify all containers are running
+   - Check health endpoints
+   - Test database connectivity
+   - Provide access URLs
+
+Deploy the complete application stack and provide URLs for immediate testing.`,
   }
 };
 
@@ -171,6 +290,12 @@ export default function DashboardPage() {
   const [sidebarView, setSidebarView] = useState<'overview' | 'agents' | 'activity'>('overview');
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [fullScreenMode, setFullScreenMode] = useState(false);
+  const [deploymentData, setDeploymentData] = useState<any>(null);
+  const [codeAnalyzerPrompt, setCodeAnalyzerPrompt] = useState<string | null>(null);
+  const [retryingValidation, setRetryingValidation] = useState(false);
+  const [restartingMigration, setRestartingMigration] = useState(false);
+  const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
+  const [selectedTab, setSelectedTab] = useState<'prompt' | 'output' | 'logs'>('prompt');
 
   const addActivity = (type: ActivityEvent['type'], agent: string | undefined, message: string, progress?: number) => {
     const event: ActivityEvent = {
@@ -183,6 +308,60 @@ export default function DashboardPage() {
     };
     setActivityFeed(prev => [event, ...prev].slice(0, 50));
   };
+
+  // Fetch the real prompt for code-analyzer when selected
+  useEffect(() => {
+    if (selectedAgent === 'code-analyzer' && !codeAnalyzerPrompt) {
+      const fetchPrompt = async () => {
+        try {
+          console.log('Fetching code-analyzer ACTUAL system prompt from ARK agent...');
+          const response = await fetch('http://localhost:4000/api/repo-migration/code-analyzer-prompt');
+          if (response.ok) {
+            const data = await response.json();
+            // Backend now returns systemPrompt (not promptTemplate)
+            const prompt = data.systemPrompt || data.promptTemplate;
+            console.log('System prompt fetched successfully from:', data.source, '- Length:', prompt?.length);
+            setCodeAnalyzerPrompt(prompt);
+          } else {
+            console.error('Failed to fetch prompt:', response.status);
+          }
+        } catch (error) {
+          console.error('Error fetching code-analyzer prompt:', error);
+        }
+      };
+
+      fetchPrompt();
+    }
+  }, [selectedAgent, codeAnalyzerPrompt]);
+
+  // Fetch deployment data when selectedAgent is 'container-deployer'
+  useEffect(() => {
+    if (selectedAgent === 'container-deployer' && migrationId) {
+      const fetchDeployment = async () => {
+        try {
+          const response = await fetch(`http://localhost:4000/api/migrations/${migrationId}/containers`);
+          if (response.ok) {
+            const data = await response.json();
+            setDeploymentData(data);
+          }
+        } catch (error) {
+          console.error('Failed to fetch deployment data:', error);
+        }
+      };
+
+      // Initial fetch
+      fetchDeployment();
+
+      // Poll every 3 seconds if deployment is not complete
+      const pollInterval = setInterval(() => {
+        if (deploymentData?.status && deploymentData.status !== 'running') {
+          fetchDeployment();
+        }
+      }, 3000);
+
+      return () => clearInterval(pollInterval);
+    }
+  }, [selectedAgent, migrationId, deploymentData?.status]);
 
   useEffect(() => {
     if (!migrationId) {
@@ -207,9 +386,12 @@ export default function DashboardPage() {
 
     const connectWebSocket = async () => {
       try {
+        console.log('🔌 Connecting to WebSocket...');
         addActivity('info', undefined, 'Connecting to real-time updates...');
         await websocketService.connect();
+        console.log('✅ WebSocket connected');
         addActivity('info', undefined, 'Connected! Subscribing to migration...');
+        console.log('📡 Subscribing to migration:', migrationId);
         websocketService.subscribeMigration(migrationId);
         addActivity('info', undefined, '✅ Ready! Waiting for agent updates...');
       } catch (error) {
@@ -262,16 +444,67 @@ export default function DashboardPage() {
       }
     };
 
+    const handleMigrationRestarted = (data: any) => {
+      if (data.migrationId === migrationId) {
+        addActivity('info', undefined, '🔄 Migration restarted! Starting from Code Analyzer...');
+        setMigration((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            status: 'analyzing',
+            progress: [],
+            validationReport: undefined,
+            deploymentResult: undefined,
+            completedAt: undefined,
+          };
+        });
+        setActivityFeed([{
+          id: `${Date.now()}-restart`,
+          timestamp: new Date(),
+          type: 'info',
+          message: '🔄 Migration restarted! Starting fresh from Step 1: Code Analyzer'
+        }]);
+        // Clear logs on restart
+        setAgentLogs([]);
+      }
+    };
+
+    const handleAgentLog = (data: any) => {
+      console.log('📜 Received agent-log event:', data);
+      if (data.migrationId === migrationId) {
+        console.log('✅ Log matches migration ID, adding to state');
+        const log: AgentLog = {
+          id: `${Date.now()}-${Math.random()}`,
+          timestamp: new Date(data.timestamp),
+          agent: data.agent,
+          level: data.level,
+          message: data.message,
+          data: data.data
+        };
+        setAgentLogs(prev => {
+          const newLogs = [...prev, log].slice(-500);
+          console.log('📊 Total logs now:', newLogs.length);
+          return newLogs;
+        });
+      } else {
+        console.log('❌ Log migration ID does not match:', data.migrationId, '!==', migrationId);
+      }
+    };
+
     websocketService.on('agent-started', handleAgentStarted);
     websocketService.on('agent-progress', handleAgentProgress);
     websocketService.on('agent-completed', handleAgentCompleted);
     websocketService.on('migration-completed', handleMigrationCompleted);
+    websocketService.on('migration-restarted', handleMigrationRestarted);
+    websocketService.on('agent-log', handleAgentLog);
 
     return () => {
       websocketService.off('agent-started', handleAgentStarted);
       websocketService.off('agent-progress', handleAgentProgress);
       websocketService.off('agent-completed', handleAgentCompleted);
       websocketService.off('migration-completed', handleMigrationCompleted);
+      websocketService.off('migration-restarted', handleMigrationRestarted);
+      websocketService.off('agent-log', handleAgentLog);
       websocketService.unsubscribeMigration(migrationId);
     };
   }, [migrationId, router]);
@@ -317,6 +550,117 @@ export default function DashboardPage() {
     }
   };
 
+  const handleRetryValidation = async () => {
+    if (!migrationId) return;
+
+    setRetryingValidation(true);
+    try {
+      const response = await fetch(`http://localhost:4000/api/repo-migration/${migrationId}/retry-validation`, {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        addActivity('info', 'quality-validator', '✅ Validation passed! Deployment starting...');
+        setMigration(prev => prev ? { ...prev, status: 'deploying' } : prev);
+      } else {
+        addActivity('info', 'quality-validator', `❌ Validation still failing: ${result.errors?.join(', ')}`);
+      }
+    } catch (error) {
+      console.error('Failed to retry validation:', error);
+      addActivity('info', 'quality-validator', '❌ Failed to retry validation');
+    } finally {
+      setRetryingValidation(false);
+    }
+  };
+
+  const handleRestartMigration = async () => {
+    console.log('🚨 handleRestartMigration CALLED!');
+    console.log('   migrationId:', migrationId);
+    console.log('   migration status:', migration?.status);
+
+    if (!migrationId) {
+      console.log('❌ No migrationId, returning');
+      return;
+    }
+
+    console.log('✅ Showing confirmation dialog...');
+    const confirmed = window.confirm(
+      '⚠️ Are you sure you want to restart this migration?\n\nThis will:\n- Reset all progress\n- Clear all agent outputs\n- Start fresh from Code Analyzer\n\nContinue?'
+    );
+
+    console.log('   User confirmed:', confirmed);
+    if (!confirmed) {
+      console.log('❌ User cancelled');
+      return;
+    }
+
+    console.log('✅ Starting restart process...');
+    setRestartingMigration(true);
+    try {
+      // Immediately reset the visual state for better UX
+      setMigration(prev => prev ? {
+        ...prev,
+        status: 'analyzing',
+        progress: [],
+        validationReport: undefined,
+        deploymentResult: undefined,
+        completedAt: undefined,
+      } : prev);
+      setActivityFeed([{
+        id: `${Date.now()}-restart-init`,
+        timestamp: new Date(),
+        type: 'info',
+        message: '🔄 Restarting migration... Please wait.'
+      }]);
+
+      const url = `http://localhost:4000/api/repo-migration/${migrationId}/restart`;
+      console.log('🌐 Making fetch request to:', url);
+
+      const response = await fetch(url, {
+        method: 'POST',
+      });
+
+      console.log('📥 Response received:', response.status, response.statusText);
+
+      const result = await response.json();
+      console.log('📊 Result:', result);
+
+      if (result.success) {
+        addActivity('info', undefined, '✅ Migration restarted successfully! Code Analyzer will start shortly...');
+
+        // Refresh migration data from server after a short delay
+        setTimeout(async () => {
+          try {
+            const data = await migrationService.getMigration(migrationId);
+            setMigration(data);
+            addActivity('info', undefined, '📊 Migration state refreshed. Watching for agent updates...');
+          } catch (err) {
+            console.error('Failed to refresh migration:', err);
+          }
+        }, 1000);
+      } else {
+        addActivity('info', undefined, `❌ Failed to restart migration: ${result.error}`);
+        // Restore previous state on error
+        const data = await migrationService.getMigration(migrationId);
+        setMigration(data);
+      }
+    } catch (error) {
+      console.error('Failed to restart migration:', error);
+      addActivity('info', undefined, '❌ Failed to restart migration - Network error');
+      // Try to restore state
+      try {
+        const data = await migrationService.getMigration(migrationId);
+        setMigration(data);
+      } catch (err) {
+        console.error('Failed to restore migration state:', err);
+      }
+    } finally {
+      setRestartingMigration(false);
+    }
+  };
+
   // Build workflow nodes with all agents
   const buildWorkflowNodes = (): WorkflowNode[] => {
     const nodes: WorkflowNode[] = [];
@@ -329,7 +673,7 @@ export default function DashboardPage() {
       subtitle: migration?.repoUrl || '',
       status: migration ? 'completed' : 'pending',
       position: { x: 100, y: 300 },
-      icon: '📁'
+      label: 'START'
     });
 
     // Step 1: Code Analyzer
@@ -343,7 +687,7 @@ export default function DashboardPage() {
       team: AGENT_CONFIGS['code-analyzer'].team,
       status: codeAnalyzer?.status || 'pending',
       position: { x: 400, y: 300 },
-      icon: AGENT_CONFIGS['code-analyzer'].icon,
+      label: AGENT_CONFIGS['code-analyzer'].label,
       systemPrompt: AGENT_CONFIGS['code-analyzer'].systemPrompt,
       tools: AGENT_CONFIGS['code-analyzer'].tools
     });
@@ -359,7 +703,7 @@ export default function DashboardPage() {
       team: AGENT_CONFIGS['migration-planner'].team,
       status: migrationPlanner?.status || 'pending',
       position: { x: 700, y: 300 },
-      icon: AGENT_CONFIGS['migration-planner'].icon,
+      label: AGENT_CONFIGS['migration-planner'].label,
       systemPrompt: AGENT_CONFIGS['migration-planner'].systemPrompt,
       tools: AGENT_CONFIGS['migration-planner'].tools
     });
@@ -375,7 +719,7 @@ export default function DashboardPage() {
       team: AGENT_CONFIGS['service-generator'].team,
       status: serviceGen?.status || 'pending',
       position: { x: 1000, y: 100 },
-      icon: AGENT_CONFIGS['service-generator'].icon,
+      label: AGENT_CONFIGS['service-generator'].label,
       systemPrompt: AGENT_CONFIGS['service-generator'].systemPrompt,
       tools: AGENT_CONFIGS['service-generator'].tools
     });
@@ -391,36 +735,73 @@ export default function DashboardPage() {
       team: AGENT_CONFIGS['frontend-migrator'].team,
       status: frontendMig?.status || 'pending',
       position: { x: 1000, y: 300 },
-      icon: AGENT_CONFIGS['frontend-migrator'].icon,
+      label: AGENT_CONFIGS['frontend-migrator'].label,
       systemPrompt: AGENT_CONFIGS['frontend-migrator'].systemPrompt,
       tools: AGENT_CONFIGS['frontend-migrator'].tools
     });
 
-    // Step 3: Quality Validator (bottom)
-    const qualityVal = getAgentProgress('quality-validator');
+    // Step 4: Unit Test Validator (top)
+    const unitTestVal = getAgentProgress('unit-test-validator');
     nodes.push({
-      id: 'quality-validator',
-      agentName: 'quality-validator',
+      id: 'unit-test-validator',
+      agentName: 'unit-test-validator',
       type: 'agent',
-      title: AGENT_CONFIGS['quality-validator'].title,
-      subtitle: AGENT_CONFIGS['quality-validator'].description,
-      team: AGENT_CONFIGS['quality-validator'].team,
-      status: qualityVal?.status || 'pending',
-      position: { x: 1000, y: 500 },
-      icon: AGENT_CONFIGS['quality-validator'].icon,
-      systemPrompt: AGENT_CONFIGS['quality-validator'].systemPrompt,
-      tools: AGENT_CONFIGS['quality-validator'].tools
+      title: AGENT_CONFIGS['unit-test-validator'].title,
+      subtitle: AGENT_CONFIGS['unit-test-validator'].description,
+      team: AGENT_CONFIGS['unit-test-validator'].team,
+      status: unitTestVal?.status || 'pending',
+      position: { x: 1350, y: 50 },
+      label: AGENT_CONFIGS['unit-test-validator'].label,
+      systemPrompt: AGENT_CONFIGS['unit-test-validator'].systemPrompt,
+      tools: AGENT_CONFIGS['unit-test-validator'].tools
     });
 
-    // Success node
+    // Step 4: Integration Test Validator (middle)
+    const integrationTestVal = getAgentProgress('integration-test-validator');
     nodes.push({
-      id: 'success',
-      type: 'success',
-      title: 'Success',
-      subtitle: 'Download Results',
-      status: migration?.status === 'completed' ? 'completed' : 'pending',
-      position: { x: 1350, y: 300 },
-      icon: '✅'
+      id: 'integration-test-validator',
+      agentName: 'integration-test-validator',
+      type: 'agent',
+      title: AGENT_CONFIGS['integration-test-validator'].title,
+      subtitle: AGENT_CONFIGS['integration-test-validator'].description,
+      team: AGENT_CONFIGS['integration-test-validator'].team,
+      status: integrationTestVal?.status || 'pending',
+      position: { x: 1350, y: 250 },
+      label: AGENT_CONFIGS['integration-test-validator'].label,
+      systemPrompt: AGENT_CONFIGS['integration-test-validator'].systemPrompt,
+      tools: AGENT_CONFIGS['integration-test-validator'].tools
+    });
+
+    // Step 4: E2E Test Validator (bottom)
+    const e2eTestVal = getAgentProgress('e2e-test-validator');
+    nodes.push({
+      id: 'e2e-test-validator',
+      agentName: 'e2e-test-validator',
+      type: 'agent',
+      title: AGENT_CONFIGS['e2e-test-validator'].title,
+      subtitle: AGENT_CONFIGS['e2e-test-validator'].description,
+      team: AGENT_CONFIGS['e2e-test-validator'].team,
+      status: e2eTestVal?.status || 'pending',
+      position: { x: 1350, y: 450 },
+      label: AGENT_CONFIGS['e2e-test-validator'].label,
+      systemPrompt: AGENT_CONFIGS['e2e-test-validator'].systemPrompt,
+      tools: AGENT_CONFIGS['e2e-test-validator'].tools
+    });
+
+    // Step 5: Container Deployer
+    const containerDep = getAgentProgress('container-deployer');
+    nodes.push({
+      id: 'container-deployer',
+      agentName: 'container-deployer',
+      type: 'agent',
+      title: AGENT_CONFIGS['container-deployer'].title,
+      subtitle: AGENT_CONFIGS['container-deployer'].description,
+      team: AGENT_CONFIGS['container-deployer'].team,
+      status: containerDep?.status || 'pending',
+      position: { x: 1700, y: 250 },
+      label: AGENT_CONFIGS['container-deployer'].label,
+      systemPrompt: AGENT_CONFIGS['container-deployer'].systemPrompt,
+      tools: AGENT_CONFIGS['container-deployer'].tools
     });
 
     return nodes;
@@ -428,16 +809,18 @@ export default function DashboardPage() {
 
   const workflowNodes = buildWorkflowNodes();
 
-  // Define connections
+  // Define connections - CORRECT SEQUENTIAL FLOW
   const connections = [
     { from: 'trigger', to: 'code-analyzer' },
     { from: 'code-analyzer', to: 'migration-planner' },
     { from: 'migration-planner', to: 'service-generator' },
-    { from: 'migration-planner', to: 'frontend-migrator' },
-    { from: 'migration-planner', to: 'quality-validator' },
-    { from: 'service-generator', to: 'success' },
-    { from: 'frontend-migrator', to: 'success' },
-    { from: 'quality-validator', to: 'success' },
+    { from: 'service-generator', to: 'frontend-migrator' },
+    // Test Validators run AFTER code is generated
+    { from: 'frontend-migrator', to: 'unit-test-validator' },
+    { from: 'unit-test-validator', to: 'integration-test-validator' },
+    { from: 'integration-test-validator', to: 'e2e-test-validator' },
+    // Container Deployer ONLY runs after ALL tests pass
+    { from: 'e2e-test-validator', to: 'container-deployer' },
   ];
 
   if (loading) {
@@ -460,27 +843,18 @@ export default function DashboardPage() {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50 flex items-center justify-center p-6">
         <div className="relative group max-w-lg">
           <div className="absolute -inset-1 bg-gradient-to-r from-red-600 to-rose-600 rounded-2xl blur opacity-25"></div>
-          <div className="relative bg-white p-8 rounded-2xl shadow-xl border border-red-200">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-red-500 to-rose-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-500/20">
-                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-red-600">Error</h2>
-                <p className="text-sm text-slate-500">Something went wrong</p>
-              </div>
+          <div className="relative bg-white p-8 rounded-2xl shadow-xl border-2 border-red-200">
+            <div className="mb-6 text-center">
+              <span className="inline-block px-4 py-2 bg-gradient-to-r from-red-500 to-rose-500 text-white text-sm font-bold rounded-full mb-4">ERROR</span>
+              <h2 className="text-3xl font-bold bg-gradient-to-r from-red-600 to-rose-600 bg-clip-text text-transparent mb-2">Something Went Wrong</h2>
+              <p className="text-sm text-slate-600">Unable to load migration</p>
             </div>
-            <p className="text-slate-700 mb-6">{error || 'Migration not found'}</p>
+            <p className="text-slate-700 text-center mb-6 px-4 py-3 bg-red-50 border border-red-200 rounded-lg">{error || 'Migration not found'}</p>
             <button
               onClick={() => router.push('/')}
-              className="inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+              className="inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-3.5 text-base font-bold text-white shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
             >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-              Go Home
+              Return to Home
             </button>
           </div>
         </div>
@@ -492,38 +866,38 @@ export default function DashboardPage() {
   const selectedAgentProgress = selectedAgent ? getAgentProgress(selectedAgent) : null;
 
   // Full screen agent output view
-  if (fullScreenMode && selectedAgent && selectedAgentProgress?.output) {
+  if (fullScreenMode && selectedAgent && selectedNode) {
     return (
-      <div className="h-screen flex flex-col bg-white">
+      <div className="h-screen flex flex-col bg-gradient-to-br from-slate-50 to-white">
         {/* Full Screen Header */}
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm">
+        <header className="bg-white border-b-2 border-violet-200 px-6 py-4 flex items-center justify-between shadow-lg">
           <div className="flex items-center gap-4">
             <button
               onClick={() => {
                 setFullScreenMode(false);
                 setSelectedAgent(null);
               }}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 hover:bg-violet-100 rounded-lg transition-colors"
             >
               <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
             <div className="h-8 w-px bg-gray-300"></div>
-            {selectedNode && (
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">{selectedNode.icon}</span>
-                <div>
-                  <h1 className="text-xl font-semibold text-gray-900">{selectedNode.title}</h1>
-                  <p className="text-sm text-gray-500">{selectedNode.team}</p>
-                </div>
+            <div className="flex items-center gap-3">
+              <div className="px-3 py-1 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-lg">
+                <span className="text-white text-sm font-bold">{selectedNode.label}</span>
               </div>
-            )}
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">{selectedNode.title}</h1>
+                <p className="text-sm text-gray-600">{selectedNode.team}</p>
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium ${
-              selectedAgentProgress?.status === 'completed' ? 'bg-green-100 text-green-700' :
-              selectedAgentProgress?.status === 'running' ? 'bg-blue-100 text-blue-700' :
+            <span className={`inline-flex items-center px-5 py-2 rounded-full text-sm font-bold shadow-lg ${
+              selectedAgentProgress?.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+              selectedAgentProgress?.status === 'running' ? 'bg-blue-100 text-blue-700 animate-pulse' :
               selectedAgentProgress?.status === 'failed' ? 'bg-red-100 text-red-700' :
               'bg-gray-100 text-gray-600'
             }`}>
@@ -536,14 +910,186 @@ export default function DashboardPage() {
         </header>
 
         {/* Full Screen Content */}
-        <div className="flex-1 overflow-auto">
-          <AgentOutputVisualizer
-            agentName={selectedAgent}
-            output={typeof selectedAgentProgress.output === 'string'
-              ? selectedAgentProgress.output
-              : JSON.stringify(selectedAgentProgress.output, null, 2)}
-            migrationId={migrationId || ''}
-          />
+        <div className="flex-1 overflow-auto p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
+
+            {/* Tabs for Prompt, Output, Logs */}
+            <div className="bg-white rounded-2xl shadow-2xl border-2 border-violet-200">
+              {/* Tab Headers */}
+              <div className="border-b border-gray-200">
+                <nav className="flex gap-2 px-6 pt-4">
+                  <button
+                    onClick={() => setSelectedTab('prompt')}
+                    className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-all ${
+                      selectedTab === 'prompt'
+                        ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                  >
+                    📝 System Prompt
+                  </button>
+                  {selectedAgentProgress?.output && (
+                    <button
+                      onClick={() => setSelectedTab('output')}
+                      className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-all ${
+                        selectedTab === 'output'
+                          ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                      }`}
+                    >
+                      📊 Agent Output
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedTab('logs')}
+                    className={`px-4 py-2 text-sm font-semibold rounded-t-lg transition-all ${
+                      selectedTab === 'logs'
+                        ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                  >
+                    📜 Logs {agentLogs.filter(log => log.agent === selectedAgent).length > 0 && (
+                      <span className="ml-1 px-2 py-0.5 bg-violet-500 text-white text-xs rounded-full">
+                        {agentLogs.filter(log => log.agent === selectedAgent).length}
+                      </span>
+                    )}
+                  </button>
+                </nav>
+              </div>
+
+              {/* Tab Content */}
+              <div className="p-6">
+                {/* System Prompt Tab */}
+                {selectedTab === 'prompt' && (
+                  <div>
+                    <div className="mb-4">
+                      <h3 className="text-lg font-bold text-gray-900">System Prompt</h3>
+                      <p className="text-sm text-gray-600 mt-1">The exact instructions sent to the AI agent</p>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-6 max-h-[600px] overflow-y-auto">
+                      <pre className="text-sm text-slate-300 whitespace-pre-wrap font-mono leading-relaxed">
+                        {selectedAgent === 'code-analyzer' && codeAnalyzerPrompt
+                          ? codeAnalyzerPrompt
+                          : selectedNode.systemPrompt}
+                      </pre>
+                    </div>
+                    {selectedAgent === 'code-analyzer' && !codeAnalyzerPrompt && (
+                      <div className="mt-4 flex items-center justify-center gap-2 text-violet-600">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-violet-600"></div>
+                        <p className="text-sm font-medium">Loading real prompt from ARK agent...</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Agent Output Tab */}
+                {selectedTab === 'output' && selectedAgentProgress?.output && (
+                  <div>
+                    <div className="mb-4">
+                      <h3 className="text-lg font-bold text-gray-900">Agent Output</h3>
+                      <p className="text-sm text-gray-600 mt-1">Results from the agent execution</p>
+                    </div>
+                    <AgentOutputVisualizer
+                      agentName={selectedAgent}
+                      output={typeof selectedAgentProgress.output === 'string'
+                        ? selectedAgentProgress.output
+                        : JSON.stringify(selectedAgentProgress.output, null, 2)}
+                      migrationId={migrationId || ''}
+                    />
+                  </div>
+                )}
+
+                {/* Logs Tab */}
+                {selectedTab === 'logs' && (
+                  <div>
+                    <div className="mb-4 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900">Real-time Agent Logs</h3>
+                        <p className="text-sm text-gray-600 mt-1">Backend logs for {selectedNode.title}</p>
+                      </div>
+                      <button
+                        onClick={() => setAgentLogs([])}
+                        className="px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                      >
+                        Clear Logs
+                      </button>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 max-h-[600px] overflow-y-auto">
+                      {agentLogs.filter(log => log.agent === selectedAgent).length === 0 ? (
+                        <div className="text-center py-12">
+                          <svg className="w-12 h-12 mx-auto mb-3 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <p className="text-sm text-slate-400 font-medium">No logs yet for this agent</p>
+                          <p className="text-xs text-slate-500 mt-2">Logs will appear here when the agent runs</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 font-mono text-sm">
+                          {agentLogs.filter(log => log.agent === selectedAgent).map(log => (
+                            <div
+                              key={log.id}
+                              className={`flex items-start gap-3 p-3 rounded-lg ${
+                                log.level === 'error' ? 'bg-red-900/30 border-l-4 border-red-500' :
+                                log.level === 'warn' ? 'bg-yellow-900/30 border-l-4 border-yellow-500' :
+                                log.level === 'debug' ? 'bg-blue-900/30 border-l-4 border-blue-500' :
+                                'bg-slate-800/50 border-l-4 border-emerald-500'
+                              }`}
+                            >
+                              <span className="text-slate-500 text-xs mt-0.5 flex-shrink-0">
+                                {new Date(log.timestamp).toLocaleTimeString()}
+                              </span>
+                              <span className={`text-xs font-bold uppercase flex-shrink-0 ${
+                                log.level === 'error' ? 'text-red-400' :
+                                log.level === 'warn' ? 'text-yellow-400' :
+                                log.level === 'debug' ? 'text-blue-400' :
+                                'text-emerald-400'
+                              }`}>
+                                {log.level}
+                              </span>
+                              <div className="flex-1">
+                                <p className="text-slate-200 whitespace-pre-wrap break-words">{log.message}</p>
+                                {log.data && (
+                                  <pre className="text-xs text-slate-400 mt-2 p-2 bg-slate-950/50 rounded overflow-x-auto">
+                                    {JSON.stringify(log.data, null, 2)}
+                                  </pre>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Tools Used */}
+            {selectedNode.tools && selectedNode.tools.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">Tools & Capabilities</h3>
+                <div className="flex flex-wrap gap-3">
+                  {selectedNode.tools.map(tool => (
+                    <span key={tool} className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border-2 border-blue-200 font-medium">
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Duration */}
+            {selectedAgentProgress?.startedAt && (
+              <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Execution Time</h3>
+                <p className="text-3xl font-bold text-violet-600">
+                  {selectedAgentProgress.completedAt
+                    ? `${Math.round((new Date(selectedAgentProgress.completedAt).getTime() - new Date(selectedAgentProgress.startedAt).getTime()) / 1000)}s`
+                    : 'Running...'}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -556,13 +1102,14 @@ export default function DashboardPage() {
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
-              <div className="relative w-10 h-10 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-violet-500/20">
-                <span className="text-white text-lg font-bold">AR</span>
-                <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white animate-pulse"></div>
+              <div className="relative px-4 py-2 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-lg shadow-lg shadow-violet-500/20">
+                <div className="flex items-center gap-2">
+                  <span className="text-white text-lg font-bold tracking-tight">Agent@Scale</span>
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                </div>
               </div>
-              <div>
-                <h1 className="text-lg font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">Agent@Scale</h1>
-                <p className="text-xs text-slate-500">Migration Workflow</p>
+              <div className="border-l border-slate-200 pl-3">
+                <p className="text-xs text-slate-600 font-medium">Migration Workflow</p>
               </div>
             </div>
             <div className="h-8 w-px bg-slate-200"></div>
@@ -578,30 +1125,18 @@ export default function DashboardPage() {
               <span className="text-sm font-medium text-slate-700">
                 {migration.status === 'completed' ? 'Completed' :
                  migration.status === 'failed' ? 'Failed' :
-                 migration.status === 'running' ? 'Active' : 'Inactive'}
+                 ['analyzing', 'planning', 'generating', 'validating'].includes(migration.status) ? 'Active' : 'Inactive'}
               </span>
               <div className={`w-11 h-6 rounded-full transition-all duration-300 ${
-                migration.status === 'running' ? 'bg-gradient-to-r from-emerald-500 to-green-500' : 'bg-slate-300'
+                ['analyzing', 'planning', 'generating', 'validating'].includes(migration.status) ? 'bg-gradient-to-r from-emerald-500 to-green-500' : 'bg-slate-300'
               } relative shadow-inner`}>
                 <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all duration-300 shadow-lg ${
-                  migration.status === 'running' ? 'translate-x-5' : 'translate-x-0.5'
+                  ['analyzing', 'planning', 'generating', 'validating'].includes(migration.status) ? 'translate-x-5' : 'translate-x-0.5'
                 }`}></div>
               </div>
             </div>
 
-            {migration.status === 'completed' && (
-              <button
-                onClick={handleDownload}
-                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
-              >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-                </svg>
-                Download
-              </button>
-            )}
-
-            <div className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg bg-white">
+<div className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg bg-white">
               <div className={`w-2 h-2 rounded-full ${websocketService.isConnected() ? 'bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50' : 'bg-slate-400'}`}></div>
               <span className="text-xs font-medium text-slate-700">
                 {websocketService.isConnected() ? 'Live' : 'Offline'}
@@ -610,11 +1145,9 @@ export default function DashboardPage() {
 
             <button
               onClick={() => router.push('/')}
-              className="inline-flex items-center justify-center rounded-lg p-2 text-slate-600 hover:bg-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
+              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 border border-slate-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
+              Home
             </button>
           </div>
         </div>
@@ -623,19 +1156,16 @@ export default function DashboardPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar - Professional shadcn style */}
         <aside className="w-64 bg-white border-r border-slate-200 flex flex-col">
-          <nav className="flex-1 px-3 py-6 space-y-1">
+          <nav className="flex-1 px-3 py-6 space-y-2">
             <button
               onClick={() => setSidebarView('overview')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              className={`w-full flex items-center justify-center px-4 py-3 rounded-lg transition-all font-semibold text-sm ${
                 sidebarView === 'overview'
-                  ? 'bg-gradient-to-r from-violet-50 to-indigo-50 text-violet-700 shadow-sm border border-violet-200'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/30'
+                  : 'text-slate-700 hover:bg-slate-100 border border-slate-200'
               }`}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              <span className="text-sm font-semibold">Overview</span>
+              Overview
             </button>
 
             <button
@@ -644,16 +1174,54 @@ export default function DashboardPage() {
                 setShowRightPanel(!showRightPanel);
                 setSelectedAgent(null);
               }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              className={`w-full flex items-center justify-center px-4 py-3 rounded-lg transition-all font-semibold text-sm ${
                 showRightPanel && sidebarView === 'activity'
-                  ? 'bg-gradient-to-r from-violet-50 to-indigo-50 text-violet-700 shadow-sm border border-violet-200'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/30'
+                  : 'text-slate-700 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              Activity Feed
+            </button>
+
+            {/* Download Button - Always Visible */}
+            <button
+              onClick={handleDownload}
+              disabled={migration.status !== 'completed'}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all font-semibold text-sm ${
+                migration.status === 'completed'
+                  ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:scale-105'
+                  : 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
               }`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              <span className="text-sm font-semibold">Activity</span>
+              {migration.status === 'completed' ? 'Download Code' : 'Not Ready'}
+            </button>
+
+            {/* Restart Migration Button */}
+            <button
+              onClick={handleRestartMigration}
+              disabled={restartingMigration || migration.status === 'analyzing'}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all font-semibold text-sm ${
+                !restartingMigration && migration.status !== 'analyzing'
+                  ? 'bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-lg shadow-orange-500/30 hover:shadow-xl hover:scale-105'
+                  : 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
+              }`}
+            >
+              {restartingMigration ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                  Restarting...
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Restart Migration
+                </>
+              )}
             </button>
           </nav>
 
@@ -673,6 +1241,56 @@ export default function DashboardPage() {
 
         {/* Main Canvas - Professional shadcn style */}
         <main className="flex-1 overflow-auto bg-gradient-to-br from-slate-50 to-white relative">
+          {/* Validation Paused Banner */}
+          {migration.status === 'paused' && (
+            <div className="sticky top-0 z-50 bg-gradient-to-r from-yellow-50 to-amber-50 border-b-4 border-yellow-400 shadow-lg">
+              <div className="max-w-7xl mx-auto px-8 py-6">
+                <div className="flex items-center justify-between gap-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-shrink-0 w-12 h-12 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg">
+                      <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-yellow-900 mb-1">⚠️ Quality Validation Failed</h3>
+                      <p className="text-sm text-yellow-800">
+                        The generated code failed quality checks. Please review the errors, fix the issues, and retry validation to continue.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleRetryValidation}
+                    disabled={retryingValidation}
+                    className="flex-shrink-0 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg text-base font-bold shadow-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500 focus-visible:ring-offset-2 bg-gradient-to-r from-yellow-600 to-amber-600 text-white hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {retryingValidation ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                        Retrying...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Retry Validation
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* View validation errors link */}
+                <div className="mt-4 flex items-center gap-2 text-sm text-yellow-800">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="font-medium">Click on the Quality Validator agent to view detailed error logs</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="p-8 min-h-full" style={{ minWidth: '1600px', minHeight: '700px' }}>
             {/* SVG for connections */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
@@ -757,8 +1375,10 @@ export default function DashboardPage() {
                     <div
                       onClick={() => {
                         if (node.agentName) {
+                          // Show agent details in full page
                           setSelectedAgent(node.agentName);
                           setFullScreenMode(true);
+                          setShowRightPanel(false);
                         }
                       }}
                       className={`relative w-52 bg-white rounded-xl shadow-lg border-2 cursor-pointer transition-all hover:shadow-2xl hover:scale-105 ${
@@ -770,15 +1390,15 @@ export default function DashboardPage() {
                     >
                       {/* Node Header */}
                       <div className="px-4 py-3 border-b border-slate-100">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-2xl ${
-                            node.status === 'completed' ? 'bg-emerald-50' :
-                            node.status === 'running' ? 'bg-violet-50' :
-                            node.status === 'failed' ? 'bg-red-50' :
-                            'bg-slate-50'
+                        <div className="flex items-center justify-between mb-3">
+                          <span className={`inline-block px-3 py-1 text-xs font-bold rounded-full ${
+                            node.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                            node.status === 'running' ? 'bg-violet-100 text-violet-700' :
+                            node.status === 'failed' ? 'bg-red-100 text-red-700' :
+                            'bg-slate-100 text-slate-600'
                           }`}>
-                            {node.icon}
-                          </div>
+                            {node.label}
+                          </span>
                           {node.status === 'running' && (
                             <div className="flex gap-1">
                               <div className="w-2 h-2 bg-violet-500 rounded-full animate-bounce"></div>
@@ -787,9 +1407,9 @@ export default function DashboardPage() {
                             </div>
                           )}
                         </div>
-                        <h3 className="font-bold text-slate-900 text-sm leading-tight">{node.title}</h3>
+                        <h3 className="font-bold text-slate-900 text-sm leading-tight mb-1">{node.title}</h3>
                         {node.subtitle && (
-                          <p className="text-xs text-slate-600 mt-1 line-clamp-2">{node.subtitle}</p>
+                          <p className="text-xs text-slate-600 line-clamp-2">{node.subtitle}</p>
                         )}
                       </div>
 
@@ -830,27 +1450,278 @@ export default function DashboardPage() {
         {/* Right Panel - Activity or Agent Details */}
         {showRightPanel && (
           <aside className="w-96 bg-white border-l border-gray-200 overflow-y-auto">
-            {selectedAgent && selectedNode ? (
+            {selectedAgent === 'container-deployer' ? (
+              // Deployment View Panel
+              <div>
+                <div className="p-4 border-b border-gray-200">
+                  <div className="mb-3">
+                    <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full mb-2">DEPLOYMENT</span>
+                    <h3 className="font-bold text-gray-900 text-lg">Container Status</h3>
+                    <p className="text-xs text-gray-500 mt-1">Running services and frontends</p>
+                  </div>
+                  {deploymentData && (
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium mt-2 ${
+                      deploymentData.status === 'running' ? 'bg-green-100 text-green-700' :
+                      deploymentData.status === 'building' ? 'bg-blue-100 text-blue-700' :
+                      deploymentData.status === 'failed' ? 'bg-red-100 text-red-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {deploymentData.status}
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-4 space-y-6">
+                  {!deploymentData ? (
+                    <div className="text-center py-8 text-gray-400">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 mx-auto mb-4"></div>
+                      <p className="text-sm">Loading deployment data...</p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Frontend Links - Prominent */}
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wide">
+                          Frontend Applications
+                        </h4>
+                        <div className="space-y-2">
+                          {deploymentData.microFrontends?.map((frontend: any) => (
+                            <a
+                              key={frontend.name}
+                              href={frontend.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block p-3 bg-gradient-to-r from-violet-50 to-indigo-50 rounded-lg border-2 border-violet-200 hover:border-violet-400 transition-all hover:shadow-lg group"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-violet-900">{frontend.name}</span>
+                                    <span className={`w-2 h-2 rounded-full ${
+                                      frontend.status === 'running' ? 'bg-green-500 animate-pulse' :
+                                      frontend.status === 'starting' ? 'bg-yellow-500' :
+                                      'bg-red-500'
+                                    }`}></span>
+                                  </div>
+                                  <div className="text-xs text-violet-600 mt-1 font-mono">
+                                    localhost:{frontend.port}
+                                  </div>
+                                </div>
+                                <svg className="w-5 h-5 text-violet-600 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Microservices */}
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wide">
+                          Microservices
+                        </h4>
+                        <div className="space-y-2">
+                          {deploymentData.services?.map((service: any) => (
+                            <div
+                              key={service.name}
+                              className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-gray-900 text-sm">{service.name}</span>
+                                    <span className={`w-2 h-2 rounded-full ${
+                                      service.status === 'running' ? 'bg-green-500 animate-pulse' :
+                                      service.status === 'starting' ? 'bg-yellow-500' :
+                                      'bg-red-500'
+                                    }`}></span>
+                                  </div>
+                                  <div className="flex items-center gap-4 mt-2 text-xs">
+                                    <a
+                                      href={service.apiUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 hover:text-blue-800 font-mono"
+                                    >
+                                      :{service.port}
+                                    </a>
+                                    {service.healthUrl && (
+                                      <a
+                                        href={service.healthUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-green-600 hover:text-green-800"
+                                      >
+                                        health
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                                {service.status === 'running' && (
+                                  <span className="text-xs text-green-600 font-medium">✓</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Database */}
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wide">
+                          Database
+                        </h4>
+                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-blue-900 text-sm">PostgreSQL</div>
+                              <div className="text-xs text-blue-600 mt-1">localhost:5432</div>
+                            </div>
+                            <span className="text-xs text-blue-600 font-medium">✓ Running</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick Actions */}
+                      {/* Deployment Failed */}
+                      {deploymentData.status === 'failed' && (
+                        <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                          <div className="flex items-start gap-3 mb-3">
+                            <div className="flex-shrink-0 w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
+                              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="text-sm font-bold text-red-900 mb-1">Deployment Failed</h4>
+                              <p className="text-xs text-red-700 mb-2">The container deployment encountered an error.</p>
+
+                              {/* Error Message */}
+                              {deploymentData.error && (
+                                <div className="mt-2 p-3 bg-red-100 border border-red-200 rounded text-xs text-red-800 font-mono">
+                                  <div className="font-bold mb-1">Error Details:</div>
+                                  {deploymentData.error}
+                                </div>
+                              )}
+
+                              {/* Common Issues */}
+                              <div className="mt-3 text-xs text-red-700">
+                                <div className="font-semibold mb-1">Common causes:</div>
+                                <ul className="list-disc list-inside space-y-1 text-red-600">
+                                  <li>Docker is not running</li>
+                                  <li>Port already in use</li>
+                                  <li>Insufficient disk space</li>
+                                  <li>Build compilation errors</li>
+                                </ul>
+                              </div>
+
+                              {/* Retry Suggestion */}
+                              <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                                <strong>Tip:</strong> Check the Container Deployer logs in the output panel for detailed error information.
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Deployment Progress */}
+                      {deploymentData.status !== 'running' && deploymentData.status !== 'failed' && (
+                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+                            <span className="text-sm font-medium text-blue-900">
+                              {deploymentData.status === 'building' ? 'Building Docker images...' :
+                               deploymentData.status === 'deploying' ? 'Starting containers...' :
+                               'Preparing deployment...'}
+                            </span>
+                          </div>
+
+                          {/* Progress Bar */}
+                          <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
+                            <div
+                              className="bg-gradient-to-r from-blue-600 to-indigo-600 h-2 rounded-full transition-all duration-500"
+                              style={{
+                                width: `${
+                                  deploymentData.status === 'building' ? '40%' :
+                                  deploymentData.status === 'deploying' ? '70%' :
+                                  '20%'
+                                }%`
+                              }}
+                            ></div>
+                          </div>
+
+                          {/* Service Status */}
+                          {(deploymentData.services?.length > 0 || deploymentData.microFrontends?.length > 0) && (
+                            <div className="text-xs text-blue-700 space-y-1">
+                              {deploymentData.services?.filter((s: any) => s.status === 'running').length > 0 && (
+                                <div>✓ {deploymentData.services.filter((s: any) => s.status === 'running').length}/{deploymentData.services.length} services healthy</div>
+                              )}
+                              {deploymentData.microFrontends?.filter((f: any) => f.status === 'running').length > 0 && (
+                                <div>✓ {deploymentData.microFrontends.filter((f: any) => f.status === 'running').length}/{deploymentData.microFrontends.length} frontends ready</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Quick Actions</h4>
+                        <div className="space-y-2">
+                          <button
+                            onClick={() => {
+                              if (deploymentData.status === 'running' && deploymentData.microFrontends?.[0]?.url) {
+                                window.open(deploymentData.microFrontends[0].url, '_blank');
+                              }
+                            }}
+                            disabled={deploymentData.status !== 'running'}
+                            className={`w-full px-4 py-3 rounded-lg text-sm font-bold transition-all ${
+                              deploymentData.status === 'running'
+                                ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:shadow-lg cursor-pointer'
+                                : deploymentData.status === 'failed'
+                                ? 'bg-red-200 text-red-700 cursor-not-allowed'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            {deploymentData.status === 'failed' ? 'Deployment Failed' : 'Open Application'}
+                            {deploymentData.status !== 'running' && deploymentData.status !== 'failed' && (
+                              <span className="text-xs block mt-1 font-normal">Waiting for deployment...</span>
+                            )}
+                            {deploymentData.status === 'failed' && (
+                              <span className="text-xs block mt-1 font-normal">Cannot open - deployment failed</span>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Network Info */}
+                      {deploymentData.networkName && (
+                        <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                          <div className="text-xs text-gray-500 mb-1">Docker Network</div>
+                          <div className="font-mono text-xs text-gray-700">{deploymentData.networkName}</div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : selectedAgent && selectedNode ? (
             // Agent Details Panel
             <div>
               <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">{selectedNode.icon}</span>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{selectedNode.title}</h3>
-                    <p className="text-xs text-gray-500">{selectedNode.team}</p>
-                  </div>
+                <div className="flex-1">
+                  <span className="inline-block px-3 py-1 bg-violet-100 text-violet-700 text-xs font-bold rounded-full mb-2">{selectedNode.label}</span>
+                  <h3 className="font-bold text-gray-900 text-lg">{selectedNode.title}</h3>
+                  <p className="text-xs text-gray-500 mt-1">{selectedNode.team}</p>
                 </div>
                 <button
                   onClick={() => {
                     setSelectedAgent(null);
                     setShowRightPanel(false);
                   }}
-                  className="p-1 hover:bg-gray-100 rounded"
+                  className="px-3 py-2 hover:bg-gray-100 rounded-lg text-sm font-medium text-gray-600"
                 >
-                  <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  Close
                 </button>
               </div>
 
@@ -885,9 +1756,14 @@ export default function DashboardPage() {
                   <h4 className="text-sm font-semibold text-gray-700 mb-2">System Prompt</h4>
                   <div className="bg-gray-900 rounded-lg p-3 max-h-64 overflow-y-auto">
                     <pre className="text-xs text-gray-300 whitespace-pre-wrap font-mono leading-relaxed">
-                      {selectedNode.systemPrompt}
+                      {selectedAgent === 'code-analyzer' && codeAnalyzerPrompt
+                        ? codeAnalyzerPrompt
+                        : selectedNode.systemPrompt}
                     </pre>
                   </div>
+                  {selectedAgent === 'code-analyzer' && !codeAnalyzerPrompt && (
+                    <p className="text-xs text-gray-500 mt-2 italic">Loading real prompt from ARK agent...</p>
+                  )}
                 </div>
 
                 {/* Output */}
@@ -923,32 +1799,43 @@ export default function DashboardPage() {
             // Activity Feed
             <div>
               <div className="p-4 border-b border-gray-200">
-                <h3 className="font-semibold text-gray-900">Activity Feed</h3>
-                <p className="text-xs text-gray-500 mt-1">Real-time updates</p>
+                <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full mb-2">LIVE UPDATES</span>
+                <h3 className="font-bold text-gray-900 text-lg">Activity Feed</h3>
+                <p className="text-xs text-gray-500 mt-1">Real-time migration events</p>
               </div>
               <div className="p-4 space-y-2">
                 {activityFeed.length === 0 ? (
                   <div className="text-center py-8 text-gray-400">
-                    <div className="text-2xl mb-2">⏳</div>
-                    <p className="text-xs">Waiting for events...</p>
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                    <p className="text-sm font-medium">Waiting for events...</p>
                   </div>
                 ) : (
                   activityFeed.map((event) => (
                     <div
                       key={event.id}
-                      className="p-3 bg-gray-50 rounded-lg border border-gray-100 hover:bg-gray-100 transition-colors"
+                      className="p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
                     >
-                      <div className="flex items-start gap-2">
-                        <span className="text-lg flex-shrink-0">{
-                          event.type === 'agent-started' ? '🚀' :
-                          event.type === 'agent-completed' ? '✅' :
-                          event.type === 'agent-progress' ? '⚙️' :
-                          event.type === 'migration-completed' ? '🎉' :
-                          'ℹ️'
-                        }</span>
+                      <div className="flex items-start gap-3">
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-bold flex-shrink-0 ${
+                          event.type === 'agent-started' ? 'bg-blue-100 text-blue-700' :
+                          event.type === 'agent-completed' ? 'bg-green-100 text-green-700' :
+                          event.type === 'agent-progress' ? 'bg-yellow-100 text-yellow-700' :
+                          event.type === 'migration-completed' ? 'bg-emerald-100 text-emerald-700' :
+                          'bg-gray-100 text-gray-700'
+                        }`}>
+                          {
+                            event.type === 'agent-started' ? 'START' :
+                            event.type === 'agent-completed' ? 'DONE' :
+                            event.type === 'agent-progress' ? 'RUN' :
+                            event.type === 'migration-completed' ? 'SUCCESS' :
+                            'INFO'
+                          }
+                        </span>
                         <div className="flex-1 min-w-0">
                           {event.agent && (
-                            <div className="text-xs font-semibold text-gray-700 mb-1">
+                            <div className="text-xs font-bold text-gray-700 mb-1">
                               {event.agent.replace(/-/g, ' ').toUpperCase()}
                             </div>
                           )}
@@ -969,4 +1856,36 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
+
+// Component to display agent prompt in dashboard
+function AgentPromptInDashboard({
+  agentName,
+  codeAnalyzerPrompt,
+}: {
+  agentName: string;
+  codeAnalyzerPrompt: string | null;
+}) {
+  const [loading, setLoading] = useState(!codeAnalyzerPrompt);
+
+  if (agentName === 'code-analyzer') {
+    if (loading && !codeAnalyzerPrompt) {
+      return (
+        <div className="flex items-center justify-center py-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-violet-500 mx-auto mb-2"></div>
+            <p className="text-xs text-slate-400">Loading prompt...</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <pre className="text-xs text-slate-300 whitespace-pre-wrap font-mono leading-relaxed max-h-96 overflow-y-auto">
+        {codeAnalyzerPrompt || 'Prompt not loaded'}
+      </pre>
+    );
+  }
+
+  return <p className="text-xs text-slate-400">Prompt not available</p>;
 }

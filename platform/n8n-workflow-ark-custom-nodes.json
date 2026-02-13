@@ -1,0 +1,479 @@
+{
+  "name": "Agent@Scale Migration - ARK Custom Nodes",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "migration-ark-custom",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [120, 460],
+      "webhookId": "migration-ark-custom"
+    },
+    {
+      "parameters": {
+        "agent": "={{ 'code-analyzer' }}",
+        "namespace": "default",
+        "input": "={{ JSON.stringify({\n  repositoryPath: $json.body.repositoryPath,\n  repositoryUrl: $json.body.repositoryUrl,\n  task: 'Analyze the codebase and provide a comprehensive report including architecture, database schema, API endpoints, and migration recommendations'\n}) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "ark-code-analyzer",
+      "name": "ARK Agent: Code Analyzer",
+      "type": "@agents-at-scale/n8n-nodes-ark.arkAgent",
+      "typeVersion": 1,
+      "position": [340, 460],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      },
+      "notes": "Analyzes source code using ARK custom node"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook Trigger').item.json.body.notificationUrl || 'http://backend:4000/api/webhook/notify' }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'analyzer_completed',\n  timestamp: new Date().toISOString(),\n  result: $json\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-analyzer-completed",
+      "name": "Notify: Analyzer Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [560, 460]
+    },
+    {
+      "parameters": {
+        "agent": "={{ 'migration-planner' }}",
+        "namespace": "default",
+        "input": "={{ JSON.stringify({\n  codeAnalysis: $('ARK Agent: Code Analyzer').item.json.output,\n  targetArchitecture: 'microservices',\n  targetFramework: 'spring-boot',\n  targetFrontend: 'angular',\n  task: 'Create a detailed migration plan based on the code analysis'\n}) }}",
+        "sessionId": "={{ $('Webhook Trigger').item.json.body.migrationId || 'migration-' + Date.now() }}",
+        "options": {
+          "timeout": 300000,
+          "model": "gpt-4o"
+        }
+      },
+      "id": "ark-migration-planner",
+      "name": "ARK Agent Advanced: Migration Planner",
+      "type": "@agents-at-scale/n8n-nodes-ark.arkAgentAdvanced",
+      "typeVersion": 1,
+      "position": [780, 460],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      },
+      "notes": "Creates migration plan with memory support"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook Trigger').item.json.body.notificationUrl || 'http://backend:4000/api/webhook/notify' }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'planner_completed',\n  timestamp: new Date().toISOString(),\n  migrationPlan: $json\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-planner-completed",
+      "name": "Notify: Planner Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1000, 460]
+    },
+    {
+      "parameters": {
+        "agent": "={{ 'service-generator' }}",
+        "namespace": "default",
+        "input": "={{ JSON.stringify({\n  migrationPlan: $('ARK Agent Advanced: Migration Planner').item.json.output,\n  outputPath: $('Webhook Trigger').item.json.body.outputPath || '/workspace/output',\n  task: 'Generate Spring Boot microservices based on the migration plan'\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "ark-service-generator",
+      "name": "ARK Agent: Service Generator",
+      "type": "@agents-at-scale/n8n-nodes-ark.arkAgent",
+      "typeVersion": 1,
+      "position": [1220, 300],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      },
+      "notes": "Generates Spring Boot microservices"
+    },
+    {
+      "parameters": {
+        "agent": "={{ 'frontend-migrator' }}",
+        "namespace": "default",
+        "input": "={{ JSON.stringify({\n  migrationPlan: $('ARK Agent Advanced: Migration Planner').item.json.output,\n  outputPath: $('Webhook Trigger').item.json.body.outputPath || '/workspace/output',\n  task: 'Generate Angular micro-frontends based on the migration plan'\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "ark-frontend-migrator",
+      "name": "ARK Agent: Frontend Migrator",
+      "type": "@agents-at-scale/n8n-nodes-ark.arkAgent",
+      "typeVersion": 1,
+      "position": [1220, 620],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      },
+      "notes": "Generates Angular micro-frontends"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook Trigger').item.json.body.notificationUrl || 'http://backend:4000/api/webhook/notify' }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'service_generator_completed',\n  timestamp: new Date().toISOString(),\n  result: $json\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-service-completed",
+      "name": "Notify: Service Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook Trigger').item.json.body.notificationUrl || 'http://backend:4000/api/webhook/notify' }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'frontend_migrator_completed',\n  timestamp: new Date().toISOString(),\n  result: $json\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-frontend-completed",
+      "name": "Notify: Frontend Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1440, 620]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-results",
+      "name": "Merge Parallel Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1660, 460]
+    },
+    {
+      "parameters": {
+        "agent": "={{ 'quality-validator' }}",
+        "namespace": "default",
+        "input": "={{ JSON.stringify({\n  outputPath: $('Webhook Trigger').item.json.body.outputPath || '/workspace/output',\n  sourcePath: $('Webhook Trigger').item.json.body.repositoryPath,\n  migrationPlan: $('ARK Agent Advanced: Migration Planner').item.json.output,\n  serviceResult: $('ARK Agent: Service Generator').item.json.output,\n  frontendResult: $('ARK Agent: Frontend Migrator').item.json.output,\n  task: 'Validate the generated code quality, build success, and functional correctness'\n}) }}",
+        "dimensions": "={{ JSON.stringify([\n  { name: 'Entity Coverage', weight: 0.2, description: 'Percentage of entities migrated correctly' },\n  { name: 'Endpoint Coverage', weight: 0.2, description: 'Percentage of API endpoints migrated' },\n  { name: 'Build Success', weight: 0.3, description: 'Whether all services build successfully' },\n  { name: 'Code Quality', weight: 0.15, description: 'Code quality metrics and best practices' },\n  { name: 'Security', weight: 0.15, description: 'Security vulnerabilities check' }\n]) }}",
+        "options": {
+          "timeout": 600000,
+          "threshold": 0.7
+        }
+      },
+      "id": "ark-quality-validator",
+      "name": "ARK Evaluation: Quality Validator",
+      "type": "@agents-at-scale/n8n-nodes-ark.arkEvaluation",
+      "typeVersion": 1,
+      "position": [1880, 460],
+      "credentials": {
+        "arkApi": {
+          "id": "1",
+          "name": "ARK API"
+        }
+      },
+      "notes": "Validates migration quality with scoring"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.score }}",
+              "operation": "largerEqual",
+              "value2": 0.7
+            }
+          ]
+        }
+      },
+      "id": "check-quality-threshold",
+      "name": "Check Quality Threshold",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2100, 460]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook Trigger').item.json.body.notificationUrl || 'http://backend:4000/api/webhook/notify' }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'migration_completed',\n  status: 'success',\n  timestamp: new Date().toISOString(),\n  validationReport: $('ARK Evaluation: Quality Validator').item.json,\n  outputPath: $('Webhook Trigger').item.json.body.outputPath || '/workspace/output'\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-success",
+      "name": "Notify: Migration Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2320, 360]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook Trigger').item.json.body.notificationUrl || 'http://backend:4000/api/webhook/notify' }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'migration_paused',\n  status: 'quality_check_failed',\n  timestamp: new Date().toISOString(),\n  validationReport: $('ARK Evaluation: Quality Validator').item.json,\n  message: 'Migration paused due to quality threshold not met. Please review and fix issues.'\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-quality-failed",
+      "name": "Notify: Quality Check Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2320, 560]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  migrationId: $('Webhook Trigger').item.json.body.migrationId || 'unknown',\n  status: 'completed',\n  validationReport: $('ARK Evaluation: Quality Validator').item.json,\n  outputPath: $('Webhook Trigger').item.json.body.outputPath || '/workspace/output',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {}
+      },
+      "id": "webhook-response-success",
+      "name": "Webhook Response: Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2540, 360]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  migrationId: $('Webhook Trigger').item.json.body.migrationId || 'unknown',\n  status: 'paused',\n  reason: 'quality_threshold_not_met',\n  validationReport: $('ARK Evaluation: Quality Validator').item.json,\n  message: 'Migration paused. Quality score below threshold (0.7)',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {}
+      },
+      "id": "webhook-response-failed",
+      "name": "Webhook Response: Quality Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2540, 560]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "ARK Agent: Code Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ARK Agent: Code Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Notify: Analyzer Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify: Analyzer Completed": {
+      "main": [
+        [
+          {
+            "node": "ARK Agent Advanced: Migration Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ARK Agent Advanced: Migration Planner": {
+      "main": [
+        [
+          {
+            "node": "Notify: Planner Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify: Planner Completed": {
+      "main": [
+        [
+          {
+            "node": "ARK Agent: Service Generator",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ARK Agent: Frontend Migrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ARK Agent: Service Generator": {
+      "main": [
+        [
+          {
+            "node": "Notify: Service Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ARK Agent: Frontend Migrator": {
+      "main": [
+        [
+          {
+            "node": "Notify: Frontend Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify: Service Completed": {
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify: Frontend Completed": {
+      "main": [
+        [
+          {
+            "node": "Merge Parallel Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Parallel Results": {
+      "main": [
+        [
+          {
+            "node": "ARK Evaluation: Quality Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ARK Evaluation: Quality Validator": {
+      "main": [
+        [
+          {
+            "node": "Check Quality Threshold",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Quality Threshold": {
+      "main": [
+        [
+          {
+            "node": "Notify: Migration Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify: Quality Check Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify: Migration Success": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response: Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify: Quality Check Failed": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response: Quality Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "migration",
+      "id": "1"
+    },
+    {
+      "name": "ark-custom-nodes",
+      "id": "2"
+    }
+  ],
+  "pinData": {},
+  "versionId": "1",
+  "triggerCount": 0,
+  "meta": {
+    "instanceId": "agent-at-scale-platform",
+    "templateCredsSetupCompleted": false
+  }
+}

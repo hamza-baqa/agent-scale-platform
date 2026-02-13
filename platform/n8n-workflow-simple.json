@@ -1,0 +1,154 @@
+{
+  "name": "Agent@Scale Migration - Simple (No Notifications)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "migration-ark",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [120, 460],
+      "webhookId": "migration-ark"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repositoryUrl",
+              "value": "={{ $json.body.repositoryUrl || 'https://github.com/hamza-baqa/banque-app' }}"
+            },
+            {
+              "name": "outputPath",
+              "value": "={{ $json.body.outputPath || '/workspace/output' }}"
+            },
+            {
+              "name": "repositoryPath",
+              "value": "={{ $json.body.repositoryPath || '/workspace/repos/banque-app' }}"
+            }
+          ]
+        }
+      },
+      "id": "set-defaults",
+      "name": "Set Default Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [340, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'code-analyzer',\n  input: {\n    repositoryUrl: $json.repositoryUrl,\n    repositoryPath: $json.repositoryPath\n  },\n  model: 'claude-sonnet-4-5'\n}) }}"
+      },
+      "id": "ark-code-analyzer",
+      "name": "ARK Agent: Code Analyzer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [560, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'migration-planner',\n  input: {\n    codeAnalysis: $('ARK Agent: Code Analyzer').item.json.result\n  },\n  model: 'claude-opus-4-6'\n}) }}"
+      },
+      "id": "ark-migration-planner",
+      "name": "ARK Agent: Migration Planner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [780, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'service-generator',\n  input: {\n    migrationPlan: $('ARK Agent: Migration Planner').item.json.result,\n    outputPath: $('Set Default Variables').item.json.outputPath\n  },\n  model: 'claude-sonnet-4-5'\n}) }}"
+      },
+      "id": "generate-services",
+      "name": "ARK Agent: Service Generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1000, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'frontend-migrator',\n  input: {\n    migrationPlan: $('ARK Agent: Migration Planner').item.json.result,\n    outputPath: $('Set Default Variables').item.json.outputPath\n  },\n  model: 'claude-sonnet-4-5'\n}) }}"
+      },
+      "id": "generate-frontends",
+      "name": "ARK Agent: Frontend Migrator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1220, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'quality-validator',\n  input: {\n    outputPath: $('Set Default Variables').item.json.outputPath,\n    sourcePath: $('Set Default Variables').item.json.repositoryPath,\n    migrationPlan: $('ARK Agent: Migration Planner').item.json.result\n  },\n  model: 'claude-sonnet-4-5'\n}) }}"
+      },
+      "id": "quality-validator",
+      "name": "ARK Agent: Quality Validator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1440, 460]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  repositoryUrl: $('Set Default Variables').item.json.repositoryUrl,\n  status: 'completed',\n  validationReport: $json,\n  timestamp: new Date().toISOString()\n}) }}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1660, 460]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Set Default Variables", "type": "main", "index": 0}]]
+    },
+    "Set Default Variables": {
+      "main": [[{"node": "ARK Agent: Code Analyzer", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Code Analyzer": {
+      "main": [[{"node": "ARK Agent: Migration Planner", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Migration Planner": {
+      "main": [[{"node": "ARK Agent: Service Generator", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Service Generator": {
+      "main": [[{"node": "ARK Agent: Frontend Migrator", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Frontend Migrator": {
+      "main": [[{"node": "ARK Agent: Quality Validator", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Quality Validator": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {"name": "migration"},
+    {"name": "simplified"}
+  ]
+}

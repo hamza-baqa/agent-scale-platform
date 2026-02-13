@@ -59,6 +59,7 @@ export class SpringBootServiceGenerator {
 
     // Generate for each entity
     for (const entity of config.entities) {
+      await this.generateEnumsForEntity(srcPath, entity, config.domain);
       await this.generateEntity(srcPath, entity, config.domain);
       await this.generateRepository(srcPath, entity, config.domain);
       await this.generateEntityService(srcPath, entity, config.domain);
@@ -69,7 +70,8 @@ export class SpringBootServiceGenerator {
     // Generate common files
     await this.generateExceptionHandler(srcPath, config.domain);
     await this.generateCorsConfig(srcPath, config.domain);
-    await this.generateSecurityConfig(srcPath, config.domain);
+    // SecurityConfig disabled - causes missing dependency issues
+    // await this.generateSecurityConfig(srcPath, config.domain);
 
     logger.info(`Service ${config.name} generated successfully`);
   }
@@ -152,15 +154,26 @@ export class SpringBootServiceGenerator {
         <finalName>${config.name}</finalName>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <source>17</source>
+                    <target>17</target>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>1.18.30</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
+                    <!-- Lombok annotation processing handled by maven-compiler-plugin -->
                 </configuration>
             </plugin>
         </plugins>
@@ -237,15 +250,58 @@ logging:
     await fs.writeFile(path.join(resourcesPath, 'application.yml'), yml);
   }
 
-  private async generateEntity(srcPath: string, entity: EntityConfig, domain: string): Promise<void> {
-    const fieldsCode = entity.fields.map(f => {
-      const annotations = [];
-      if (f.required) annotations.push('@NotNull');
-      if (f.unique) annotations.push('@Column(unique = true)');
+  private async generateEnumsForEntity(srcPath: string, entity: EntityConfig, domain: string): Promise<void> {
+    const knownTypes = ['String', 'Long', 'Integer', 'Double', 'Boolean', 'BigDecimal', 'LocalDate', 'LocalDateTime', 'UUID'];
+    const enumTypes = new Set<string>();
 
-      return `    ${annotations.join('\n    ')}
+    // Identify enum types (custom types that aren't known Java types)
+    entity.fields.forEach(f => {
+      const type = f.type;
+      if (!knownTypes.includes(type) && !type.includes('.')) {
+        enumTypes.add(type);
+      }
+    });
+
+    // Generate enum classes
+    for (const enumType of enumTypes) {
+      const enumClass = `package com.eurobank.${domain}.entity;
+
+public enum ${enumType} {
+    VALUE1, VALUE2, VALUE3;
+    // TODO: Define actual enum values based on business requirements
+}`;
+
+      await fs.writeFile(
+        path.join(srcPath, 'entity', `${enumType}.java`),
+        enumClass
+      );
+    }
+  }
+
+  private async generateEntity(srcPath: string, entity: EntityConfig, domain: string): Promise<void> {
+    // Filter out 'id' field as it's already defined in the template with @Id
+    const fieldsCode = entity.fields
+      .filter(f => f.name.toLowerCase() !== 'id')
+      .map(f => {
+        const annotations = [];
+        if (f.required) annotations.push('@NotNull');
+        if (f.unique) annotations.push('@Column(unique = true)');
+
+        return `    ${annotations.join('\n    ')}
     private ${f.type} ${f.name};`;
-    }).join('\n\n');
+      }).join('\n\n');
+
+    // Collect required imports based on field types
+    const typeImports = new Set<string>();
+    entity.fields.forEach(f => {
+      const type = f.type;
+      if (type.includes('BigDecimal')) typeImports.add('import java.math.BigDecimal;');
+      if (type.includes('LocalDate') && !type.includes('LocalDateTime')) typeImports.add('import java.time.LocalDate;');
+      if (type.includes('LocalDateTime')) typeImports.add('import java.time.LocalDateTime;');
+      if (type.includes('UUID')) typeImports.add('import java.util.UUID;');
+    });
+
+    const additionalImports = Array.from(typeImports).join('\n');
 
     const entityClass = `package com.eurobank.${domain}.entity;
 
@@ -259,6 +315,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.LocalDateTime;
+${additionalImports}
 
 @Entity
 @Table(name = "${entity.name.toLowerCase()}s")

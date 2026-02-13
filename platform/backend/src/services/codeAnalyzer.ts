@@ -15,6 +15,11 @@ interface EntityInfo {
   name: string;
   filePath: string;
   properties: PropertyInfo[];
+  annotations?: string[];  // @Entity, @Table, etc.
+  tableName?: string;      // Database table name
+  relationships?: RelationshipInfo[];  // Foreign keys, joins
+  javadoc?: string;        // Documentation comments
+  packageName?: string;    // Java package
 }
 
 interface PropertyInfo {
@@ -22,18 +27,55 @@ interface PropertyInfo {
   type: string;
   isRequired?: boolean;
   isUnique?: boolean;
+  annotations?: string[];  // @Column, @Id, @GeneratedValue, etc.
+  columnName?: string;     // Database column name
+  length?: number;         // Max length for strings
+  nullable?: boolean;      // Can be null
+  defaultValue?: string;   // Default value
+  javadoc?: string;        // Property documentation
+}
+
+interface RelationshipInfo {
+  type: 'OneToOne' | 'OneToMany' | 'ManyToOne' | 'ManyToMany';
+  targetEntity: string;
+  fieldName: string;
+  mappedBy?: string;
+  fetchType?: 'LAZY' | 'EAGER';
+  cascade?: string[];
 }
 
 interface ControllerInfo {
   name: string;
   filePath: string;
   endpoints: EndpointInfo[];
+  baseMapping?: string;         // @RequestMapping base path
+  annotations?: string[];       // @RestController, @CrossOrigin, etc.
+  securityAnnotations?: string[];  // @Secured, @PreAuthorize, etc.
+  javadoc?: string;             // Controller documentation
+  packageName?: string;         // Java package
 }
 
 interface EndpointInfo {
-  method: string;
-  path: string;
-  action: string;
+  method: string;               // GET, POST, PUT, DELETE, PATCH
+  path: string;                 // Full endpoint path
+  action: string;               // Method name
+  parameters?: ParameterInfo[]; // Method parameters
+  returnType?: string;          // Return type
+  requestBody?: string;         // Request body type
+  pathVariables?: string[];     // Path variables
+  queryParams?: string[];       // Query parameters
+  annotations?: string[];       // Method annotations
+  javadoc?: string;             // Method documentation
+  produces?: string;            // @Produces media type
+  consumes?: string;            // @Consumes media type
+}
+
+interface ParameterInfo {
+  name: string;
+  type: string;
+  annotation?: string;  // @RequestBody, @PathVariable, @RequestParam
+  required?: boolean;
+  defaultValue?: string;
 }
 
 interface PageInfo {
@@ -48,10 +90,119 @@ interface PageInfo {
 interface ServiceInfo {
   name: string;
   filePath: string;
-  methods: string[];
+  methods: MethodInfo[];
+  annotations?: string[];       // @Service, @Transactional, etc.
+  dependencies?: DependencyInfo[];  // Injected services/repositories
+  javadoc?: string;             // Service documentation
+  packageName?: string;         // Java package
+}
+
+interface MethodInfo {
+  name: string;
+  returnType?: string;
+  parameters?: ParameterInfo[];
+  annotations?: string[];       // @Transactional, @Async, etc.
+  javadoc?: string;             // Method documentation
+  visibility?: 'public' | 'private' | 'protected';
+}
+
+interface DependencyInfo {
+  type: string;                 // Class name
+  fieldName: string;            // Field name
+  injectionType: 'Constructor' | 'Field' | 'Setter';
 }
 
 export class CodeAnalyzer {
+
+  /**
+   * Get the AI prompt for exhaustive code analysis
+   */
+  getAnalysisPrompt(repoPath: string, framework: string): string {
+    return `You are an expert code analyzer. Analyze the codebase at: ${repoPath}
+
+**Framework Detected:** ${framework}
+
+**YOUR TASK: Perform EXHAUSTIVE analysis and extract ALL details**
+
+Extract the following with MAXIMUM detail:
+
+## 1. ENTITIES (Domain Models)
+For EACH entity, extract:
+- Entity name and file path
+- Package name
+- ALL annotations (@Entity, @Table, @Id, @GeneratedValue, @Column, etc.)
+- Table name (from @Table or default)
+- ALL properties with:
+  * Property name, type, annotations
+  * Column name, nullable, unique, length, default value
+  * Javadoc comments explaining the field
+- ALL relationships:
+  * Type (@OneToMany, @ManyToOne, @OneToOne, @ManyToMany)
+  * Target entity, mapped by, fetch type, cascade operations
+- Class-level Javadoc explaining what this entity represents
+- Business purpose (what does this entity represent in the domain?)
+
+## 2. CONTROLLERS (REST APIs)
+For EACH controller, extract:
+- Controller name and file path
+- Package name
+- ALL class annotations (@RestController, @RequestMapping, @CrossOrigin, etc.)
+- Security annotations (@Secured, @PreAuthorize, @RolesAllowed)
+- Base mapping path
+- Class Javadoc
+- For EACH endpoint:
+  * HTTP method (GET, POST, PUT, DELETE, PATCH)
+  * Full path (base + endpoint path)
+  * Method name
+  * ALL parameters (@RequestBody, @PathVariable, @RequestParam) with types
+  * Return type
+  * Request body type
+  * Path variables and query parameters
+  * Method annotations
+  * Produces/Consumes media types
+  * Javadoc explaining what the endpoint does
+
+## 3. SERVICES (Business Logic)
+For EACH service, extract:
+- Service name and file path
+- Package name
+- ALL annotations (@Service, @Component, @Transactional, etc.)
+- ALL injected dependencies (@Autowired fields) with types
+- Class Javadoc
+- For EACH public method:
+  * Method name, return type, parameters
+  * Method annotations (@Transactional, @Async, @Cacheable, etc.)
+  * Javadoc explaining the business logic
+  * What business operations does this perform?
+
+## 4. REPOSITORIES (Data Access)
+- Repository names, interfaces they extend
+- Custom query methods
+- @Query annotations
+
+## 5. CONFIGURATION
+- application.properties/yml settings
+- Bean configurations
+- Security configurations
+
+## 6. API SUMMARY
+Generate accurate counts:
+- Total entities: [count]
+- Total controllers: [count]
+- Total endpoints: [count] (sum of all endpoints across all controllers)
+- Total services: [count]
+- Total repositories: [count]
+
+**OUTPUT FORMAT:** Return structured JSON with all details above.
+
+**IMPORTANT:**
+- Be EXHAUSTIVE - extract EVERY annotation, EVERY field, EVERY method
+- Include ALL Javadoc comments
+- Explain business purpose, not just technical details
+- Be accurate with counts and relationships
+
+Start your analysis now.`;
+  }
 
   /**
    * Analyze a repository to extract structure and components
@@ -68,6 +219,13 @@ export class CodeAnalyzer {
     // Detect framework
     const framework = await this.detectFramework(repoPath);
     logger.info('Detected framework', { framework });
+
+    // LOG THE AI PROMPT (so user can see it)
+    const aiPrompt = this.getAnalysisPrompt(repoPath, framework);
+    logger.info('='.repeat(80));
+    logger.info('AI ANALYSIS PROMPT:');
+    logger.info(aiPrompt);
+    logger.info('='.repeat(80));
 
     const result: AnalysisResult = {
       projectName,
@@ -97,7 +255,9 @@ export class CodeAnalyzer {
     logger.info('Analysis complete', {
       entities: result.entities.length,
       controllers: result.controllers.length,
-      pages: result.pages.length
+      pages: result.pages.length,
+      services: result.services.length,
+      totalEndpoints: result.controllers.reduce((sum, c) => sum + c.endpoints.length, 0)
     });
 
     return result;
@@ -412,69 +572,479 @@ export class CodeAnalyzer {
         logger.warn('Failed to parse Java controller', { file, error });
       }
     }
+
+    // Find services
+    const serviceFiles1 = await this.findFiles(repoPath, '**/*Service.java');
+    const serviceFiles2 = await this.findFiles(repoPath, '**/service/**/*.java');
+    const serviceFiles3 = await this.findFiles(repoPath, '**/services/**/*.java');
+
+    for (const file of [...serviceFiles1, ...serviceFiles2, ...serviceFiles3]) {
+      try {
+        // Skip interfaces and impl files for now, focus on concrete services
+        const content = await fs.readFile(file, 'utf-8');
+        if (!content.includes('interface ')) {
+          const service = await this.extractJavaService(file);
+          if (service) {
+            result.services.push(service);
+          }
+        }
+      } catch (error) {
+        logger.warn('Failed to parse Java service', { file, error });
+      }
+    }
   }
 
   /**
-   * Extract Java entity
+   * Extract Java service with business logic details
    */
-  private async extractJavaEntity(filePath: string): Promise<EntityInfo | null> {
+  private async extractJavaService(filePath: string): Promise<ServiceInfo | null> {
     const content = await fs.readFile(filePath, 'utf-8');
     const fileName = path.basename(filePath, '.java');
 
-    const properties: PropertyInfo[] = [];
-    const propRegex = /private\s+(\w+)\s+(\w+);/g;
-    let match;
+    // Extract package
+    const packageMatch = content.match(/package\s+([\w.]+);/);
+    const packageName = packageMatch ? packageMatch[1] : undefined;
 
-    while ((match = propRegex.exec(content)) !== null) {
-      properties.push({
-        name: match[2],
-        type: match[1]
+    // Extract class annotations
+    const annotations: string[] = [];
+    const annotationRegex = /@(Service|Component|Transactional|Repository|Configuration)(?:\([^)]*\))?/g;
+    let match;
+    while ((match = annotationRegex.exec(content)) !== null) {
+      annotations.push(match[0]);
+    }
+
+    // Extract dependencies (injected fields)
+    const dependencies: DependencyInfo[] = [];
+    const fieldRegex = /@(Autowired|Inject)\s+private\s+(\w+)\s+(\w+);/g;
+    while ((match = fieldRegex.exec(content)) !== null) {
+      dependencies.push({
+        type: match[2],
+        fieldName: match[3],
+        injectionType: 'Field'
       });
     }
 
-    if (properties.length === 0) {
+    // Extract methods
+    const methods: MethodInfo[] = [];
+    const lines = content.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Match method declarations
+      const methodMatch = line.match(/(public|private|protected)\s+(\S+)\s+(\w+)\s*\(([^)]*)\)/);
+      if (methodMatch) {
+        const visibility = methodMatch[1] as any;
+        const returnType = methodMatch[2];
+        const methodName = methodMatch[3];
+        const paramsString = methodMatch[4];
+
+        // Skip constructors and standard methods
+        if (methodName === fileName || methodName === 'toString' || methodName === 'equals' || methodName === 'hashCode') {
+          continue;
+        }
+
+        // Extract parameters
+        const parameters: ParameterInfo[] = [];
+        if (paramsString.trim()) {
+          const paramParts = paramsString.split(',');
+          for (const param of paramParts) {
+            const paramMatch = param.trim().match(/(?:@(\w+)(?:\([^)]*\))?\s+)?(?:final\s+)?(\S+)\s+(\w+)/);
+            if (paramMatch) {
+              parameters.push({
+                name: paramMatch[3],
+                type: paramMatch[2],
+                annotation: paramMatch[1]
+              });
+            }
+          }
+        }
+
+        // Extract method annotations
+        const methodAnnotations: string[] = [];
+        let methodJavadoc: string | undefined;
+
+        for (let j = i - 1; j >= 0 && j >= i - 10; j--) {
+          const prevLine = lines[j].trim();
+
+          if (prevLine.startsWith('@')) {
+            methodAnnotations.unshift(prevLine);
+          }
+
+          if (prevLine.includes('/**')) {
+            let docStart = j;
+            while (docStart < i && !lines[docStart].includes('*/')) {
+              docStart++;
+            }
+            methodJavadoc = lines.slice(j, docStart + 1)
+              .map(l => l.trim().replace(/^\/\*\*|\*\/|\*\s?/g, ''))
+              .filter(l => l.length > 0)
+              .join(' ');
+            break;
+          }
+
+          if (prevLine.includes('public ') || prevLine.includes('private ') || prevLine.includes('}')) {
+            break;
+          }
+        }
+
+        methods.push({
+          name: methodName,
+          returnType,
+          parameters: parameters.length > 0 ? parameters : undefined,
+          annotations: methodAnnotations.length > 0 ? methodAnnotations : undefined,
+          javadoc: methodJavadoc,
+          visibility
+        });
+      }
+    }
+
+    if (methods.length === 0) {
       return null;
     }
 
     return {
       name: fileName,
       filePath,
-      properties
+      methods,
+      annotations: annotations.length > 0 ? annotations : undefined,
+      dependencies: dependencies.length > 0 ? dependencies : undefined,
+      packageName
     };
   }
 
   /**
-   * Extract Java controller
+   * Extract Java entity with EXHAUSTIVE details
+   */
+  private async extractJavaEntity(filePath: string): Promise<EntityInfo | null> {
+    const content = await fs.readFile(filePath, 'utf-8');
+    const fileName = path.basename(filePath, '.java');
+
+    // Extract package name
+    const packageMatch = content.match(/package\s+([\w.]+);/);
+    const packageName = packageMatch ? packageMatch[1] : undefined;
+
+    // Extract class-level annotations
+    const annotations: string[] = [];
+    const classStart = content.indexOf(`class ${fileName}`);
+    if (classStart !== -1) {
+      const beforeClass = content.substring(0, classStart);
+      const annotationRegex = /@(\w+)(?:\([^)]*\))?/g;
+      let match;
+      // Only get annotations close to class declaration (last 500 chars)
+      const relevantSection = beforeClass.substring(Math.max(0, beforeClass.length - 500));
+      while ((match = annotationRegex.exec(relevantSection)) !== null) {
+        annotations.push(match[0]);
+      }
+    }
+
+    // Extract table name from @Table annotation
+    let tableName = fileName.toLowerCase();
+    const tableMatch = content.match(/@Table\s*\(\s*name\s*=\s*"([^"]+)"/);
+    if (tableMatch) {
+      tableName = tableMatch[1];
+    }
+
+    // Extract Javadoc for class
+    let javadoc: string | undefined;
+    const javadocMatch = content.match(/\/\*\*([\s\S]*?)\*\/\s*(?:@[\w\s()="]*\s*)*class\s+/);
+    if (javadocMatch) {
+      javadoc = javadocMatch[1]
+        .split('\n')
+        .map(line => line.trim().replace(/^\*\s?/, ''))
+        .filter(line => line.length > 0)
+        .join(' ')
+        .trim();
+    }
+
+    // Extract properties with FULL details
+    const properties: PropertyInfo[] = [];
+
+    // Enhanced regex to capture annotations before properties
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Check if this is a private field declaration
+      const fieldMatch = line.match(/private\s+(\w+(?:<[^>]+>)?)\s+(\w+)\s*;/);
+      if (fieldMatch) {
+        const type = fieldMatch[1];
+        const name = fieldMatch[2];
+
+        // Look backwards for annotations
+        const propAnnotations: string[] = [];
+        let columnName: string | undefined;
+        let length: number | undefined;
+        let nullable: boolean | undefined;
+        let javadocText: string | undefined;
+
+        for (let j = i - 1; j >= 0 && j >= i - 10; j--) {
+          const prevLine = lines[j].trim();
+
+          // Stop if we hit another field or method
+          if (prevLine.includes('private ') || prevLine.includes('public ') || prevLine.includes('protected ')) {
+            if (!prevLine.includes('@')) break;
+          }
+
+          // Capture annotations
+          if (prevLine.startsWith('@')) {
+            propAnnotations.unshift(prevLine);
+
+            // Extract column details
+            if (prevLine.includes('@Column')) {
+              const colNameMatch = prevLine.match(/name\s*=\s*"([^"]+)"/);
+              if (colNameMatch) columnName = colNameMatch[1];
+
+              const lengthMatch = prevLine.match(/length\s*=\s*(\d+)/);
+              if (lengthMatch) length = parseInt(lengthMatch[1]);
+
+              const nullableMatch = prevLine.match(/nullable\s*=\s*(true|false)/);
+              if (nullableMatch) nullable = nullableMatch[1] === 'true';
+            }
+          }
+
+          // Capture Javadoc
+          if (prevLine.includes('/**') || prevLine.includes('*/')) {
+            let docStart = j;
+            while (docStart > 0 && !lines[docStart].includes('/**')) {
+              docStart--;
+            }
+            javadocText = lines.slice(docStart, j + 1)
+              .map(l => l.trim().replace(/^\/\*\*|\*\/|\*\s?/g, ''))
+              .filter(l => l.length > 0)
+              .join(' ');
+            break;
+          }
+        }
+
+        properties.push({
+          name,
+          type,
+          annotations: propAnnotations.length > 0 ? propAnnotations : undefined,
+          columnName,
+          length,
+          nullable,
+          javadoc: javadocText
+        });
+      }
+    }
+
+    // Extract relationships
+    const relationships: RelationshipInfo[] = [];
+    const relationshipTypes = ['OneToOne', 'OneToMany', 'ManyToOne', 'ManyToMany'];
+
+    for (const relType of relationshipTypes) {
+      const relRegex = new RegExp(`@${relType}\\s*\\(([^)]*)\\)\\s*(?:@[\\w()=",\\s]*\\s*)*private\\s+(\\w+(?:<[^>]+>)?)\\s+(\\w+)`, 'g');
+      let match;
+
+      while ((match = relRegex.exec(content)) !== null) {
+        const params = match[1];
+        const targetType = match[2].replace(/^(List|Set|Collection)<(.+)>$/, '$2');
+        const fieldName = match[3];
+
+        const mappedByMatch = params.match(/mappedBy\s*=\s*"([^"]+)"/);
+        const fetchMatch = params.match(/fetch\s*=\s*FetchType\.(\w+)/);
+        const cascadeMatch = params.match(/cascade\s*=\s*\{([^}]+)\}/);
+
+        relationships.push({
+          type: relType as any,
+          targetEntity: targetType,
+          fieldName,
+          mappedBy: mappedByMatch ? mappedByMatch[1] : undefined,
+          fetchType: fetchMatch ? (fetchMatch[1] as any) : undefined,
+          cascade: cascadeMatch ? cascadeMatch[1].split(',').map(c => c.trim()) : undefined
+        });
+      }
+    }
+
+    if (properties.length === 0 && relationships.length === 0) {
+      return null;
+    }
+
+    return {
+      name: fileName,
+      filePath,
+      properties,
+      annotations: annotations.length > 0 ? annotations : undefined,
+      tableName,
+      relationships: relationships.length > 0 ? relationships : undefined,
+      javadoc,
+      packageName
+    };
+  }
+
+  /**
+   * Extract Java controller with EXHAUSTIVE endpoint details
    */
   private async extractJavaController(filePath: string): Promise<ControllerInfo | null> {
     const content = await fs.readFile(filePath, 'utf-8');
     const fileName = path.basename(filePath, '.java').replace('Controller', '');
 
-    const endpoints: EndpointInfo[] = [];
-    // Match @XMapping annotations with optional path
-    const methodRegex = /@(Get|Post|Put|Delete|Patch)Mapping(?:\("([^"]*)"\)|\(\))?/g;
-    let match;
+    // Extract package name
+    const packageMatch = content.match(/package\s+([\w.]+);/);
+    const packageName = packageMatch ? packageMatch[1] : undefined;
 
-    while ((match = methodRegex.exec(content)) !== null) {
-      const method = match[1].toUpperCase();
-      let routePath = match[2] || '';
+    // Extract class-level annotations
+    const annotations: string[] = [];
+    const securityAnnotations: string[] = [];
+    const classStart = content.indexOf(`class `);
+    if (classStart !== -1) {
+      const beforeClass = content.substring(0, classStart);
+      const relevantSection = beforeClass.substring(Math.max(0, beforeClass.length - 800));
+      const annotationRegex = /@(\w+)(?:\([^)]*\))?/g;
+      let match;
 
-      // Extract method name - look for the next public method after this mapping
-      const afterMapping = content.substring(match.index);
-      const publicMethodMatch = afterMapping.match(/public\s+\S+\s+(\w+)\s*\(/);
-      const methodName = publicMethodMatch ? publicMethodMatch[1] : 'unknown';
+      while ((match = annotationRegex.exec(relevantSection)) !== null) {
+        const annotation = match[0];
+        annotations.push(annotation);
 
-      // Build full path
-      let fullPath = routePath;
-      if (!fullPath.startsWith('/')) {
-        fullPath = '/' + fileName.toLowerCase() + (fullPath ? '/' + fullPath : '');
+        // Capture security annotations separately
+        if (annotation.includes('@Secured') || annotation.includes('@PreAuthorize') || annotation.includes('@RolesAllowed')) {
+          securityAnnotations.push(annotation);
+        }
       }
+    }
 
-      endpoints.push({
-        method,
-        path: fullPath,
-        action: methodName
-      });
+    // Extract base mapping
+    let baseMapping = '';
+    const baseMappingMatch = content.match(/@RequestMapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']/);
+    if (baseMappingMatch) {
+      baseMapping = baseMappingMatch[1];
+    }
+
+    // Extract controller Javadoc
+    let javadoc: string | undefined;
+    const javadocMatch = content.match(/\/\*\*([\s\S]*?)\*\/\s*(?:@[\w\s()="',]*\s*)*(?:public\s+)?class\s+/);
+    if (javadocMatch) {
+      javadoc = javadocMatch[1]
+        .split('\n')
+        .map(line => line.trim().replace(/^\*\s?/, ''))
+        .filter(line => line.length > 0)
+        .join(' ')
+        .trim();
+    }
+
+    // Extract endpoints with FULL details
+    const endpoints: EndpointInfo[] = [];
+    const lines = content.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // Match mapping annotations
+      const mappingMatch = line.match(/@(Get|Post|Put|Delete|Patch|Request)Mapping\s*\(([^)]*)\)/);
+      if (mappingMatch) {
+        const httpMethod = mappingMatch[1] === 'Request' ? 'REQUEST' : mappingMatch[1].toUpperCase();
+        const mappingParams = mappingMatch[2];
+
+        // Extract path
+        let routePath = '';
+        const pathMatch = mappingParams.match(/(?:value\s*=\s*)?["']([^"']+)["']/);
+        if (pathMatch) {
+          routePath = pathMatch[1];
+        }
+
+        // Extract produces/consumes
+        const producesMatch = mappingParams.match(/produces\s*=\s*["']([^"']+)["']/);
+        const consumesMatch = mappingParams.match(/consumes\s*=\s*["']([^"']+)["']/);
+
+        // Find the method declaration
+        let methodLine = i + 1;
+        while (methodLine < lines.length && !lines[methodLine].includes('public ')) {
+          methodLine++;
+        }
+
+        if (methodLine < lines.length) {
+          const methodDeclaration = lines[methodLine].trim();
+          const methodDeclMatch = methodDeclaration.match(/public\s+(\S+)\s+(\w+)\s*\(([^)]*)\)/);
+
+          if (methodDeclMatch) {
+            const returnType = methodDeclMatch[1];
+            const methodName = methodDeclMatch[2];
+            const paramsString = methodDeclMatch[3];
+
+            // Extract parameters
+            const parameters: ParameterInfo[] = [];
+            if (paramsString.trim()) {
+              const paramParts = paramsString.split(',');
+              for (const param of paramParts) {
+                const paramMatch = param.trim().match(/(?:@(\w+)(?:\([^)]*\))?\s+)?(?:final\s+)?(\S+)\s+(\w+)/);
+                if (paramMatch) {
+                  parameters.push({
+                    name: paramMatch[3],
+                    type: paramMatch[2],
+                    annotation: paramMatch[1]
+                  });
+                }
+              }
+            }
+
+            // Extract method annotations (look backward)
+            const methodAnnotations: string[] = [];
+            let endpointJavadoc: string | undefined;
+
+            for (let j = i - 1; j >= 0 && j >= i - 15; j--) {
+              const prevLine = lines[j].trim();
+
+              if (prevLine.startsWith('@') && !prevLine.includes('Mapping')) {
+                methodAnnotations.unshift(prevLine);
+              }
+
+              if (prevLine.includes('/**')) {
+                let docStart = j;
+                while (docStart < i && !lines[docStart].includes('*/')) {
+                  docStart++;
+                }
+                endpointJavadoc = lines.slice(j, docStart + 1)
+                  .map(l => l.trim().replace(/^\/\*\*|\*\/|\*\s?/g, ''))
+                  .filter(l => l.length > 0)
+                  .join(' ');
+                break;
+              }
+
+              if (prevLine.includes('public ') || prevLine.includes('private ')) {
+                break;
+              }
+            }
+
+            // Identify request body, path variables, query params
+            let requestBody: string | undefined;
+            const pathVariables: string[] = [];
+            const queryParams: string[] = [];
+
+            for (const param of parameters) {
+              if (param.annotation === 'RequestBody') {
+                requestBody = param.type;
+              } else if (param.annotation === 'PathVariable') {
+                pathVariables.push(param.name);
+              } else if (param.annotation === 'RequestParam') {
+                queryParams.push(param.name);
+              }
+            }
+
+            // Build full path
+            let fullPath = baseMapping + (routePath.startsWith('/') ? routePath : '/' + routePath);
+            if (!fullPath.startsWith('/')) {
+              fullPath = '/' + fileName.toLowerCase() + fullPath;
+            }
+
+            endpoints.push({
+              method: httpMethod,
+              path: fullPath,
+              action: methodName,
+              returnType,
+              parameters: parameters.length > 0 ? parameters : undefined,
+              requestBody,
+              pathVariables: pathVariables.length > 0 ? pathVariables : undefined,
+              queryParams: queryParams.length > 0 ? queryParams : undefined,
+              annotations: methodAnnotations.length > 0 ? methodAnnotations : undefined,
+              javadoc: endpointJavadoc,
+              produces: producesMatch ? producesMatch[1] : undefined,
+              consumes: consumesMatch ? consumesMatch[1] : undefined
+            });
+          }
+        }
+      }
     }
 
     if (endpoints.length === 0) {
@@ -484,7 +1054,12 @@ export class CodeAnalyzer {
     return {
       name: fileName,
       filePath,
-      endpoints
+      endpoints,
+      baseMapping: baseMapping || undefined,
+      annotations: annotations.length > 0 ? annotations : undefined,
+      securityAnnotations: securityAnnotations.length > 0 ? securityAnnotations : undefined,
+      javadoc,
+      packageName
     };
   }
 

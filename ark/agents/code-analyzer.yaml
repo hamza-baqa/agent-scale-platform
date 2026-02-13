@@ -1,4 +1,4 @@
-apiVersion: agents.ark.ai/v1
+apiVersion: ark.mckinsey.com/v1alpha1
 kind: Agent
 metadata:
   name: code-analyzer

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import migrationService from '@/services/migrationService';
 
@@ -9,6 +9,8 @@ export default function HomePage() {
   const [repoUrl, setRepoUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const [agentPrompts, setAgentPrompts] = useState<Record<string, string>>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,7 +18,7 @@ export default function HomePage() {
     setLoading(true);
 
     try {
-      const migration = await migrationService.createMigration({
+      const response: any = await migrationService.createMigration({
         repoUrl,
         options: {
           includeDocs: true,
@@ -26,7 +28,7 @@ export default function HomePage() {
         },
       });
 
-      const migrationId = migration.migrationId || migration.id;
+      const migrationId = response.migrationId || response.id;
       router.push(`/dashboard?id=${migrationId}`);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Failed to start migration');
@@ -41,34 +43,42 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="relative w-10 h-10 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-violet-500/20">
-                <span className="text-white text-lg font-bold">AR</span>
-                <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white"></div>
+              <div className="relative px-4 py-2 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-lg shadow-lg shadow-violet-500/20">
+                <div className="flex items-center gap-2">
+                  <span className="text-white text-lg font-bold tracking-tight">Agent@Scale</span>
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">Agent@Scale</h1>
-                <p className="text-xs text-muted-foreground">by McKinsey & Company</p>
+              <div className="border-l border-slate-200 pl-3">
+                <p className="text-xs text-slate-600 font-medium">by McKinsey & Company</p>
               </div>
             </div>
-            <nav className="flex items-center gap-1">
+            <nav className="flex items-center gap-2">
+              <button
+                onClick={() => router.push('/activity')}
+                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 hover:bg-slate-100 h-10 px-4 py-2 gap-2"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                Live Activity
+              </button>
               <a
                 href="https://github.com/mckinsey/ark"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 hover:bg-slate-100 h-10 px-4 py-2"
               >
-                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                </svg>
-                Docs
+                Documentation
               </a>
               <a
                 href="https://docs.n8n.io/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 hover:bg-slate-100 h-10 px-4 py-2"
               >
-                API
+                API Reference
               </a>
             </nav>
           </div>
@@ -79,12 +89,12 @@ export default function HomePage() {
       <main className="max-w-6xl mx-auto px-6 py-24">
         {/* Hero Section */}
         <div className="text-center mb-20">
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium shadow-sm mb-8 transition-all hover:shadow-md hover:scale-105">
+          <div className="inline-flex items-center gap-3 rounded-full border-2 border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50 px-6 py-2 text-sm font-semibold shadow-sm mb-8 transition-all hover:shadow-md hover:scale-105">
+            <span className="text-violet-700">Powered by AI Agents</span>
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
             </span>
-            <span className="text-slate-700">Powered by AI Agents</span>
           </div>
           <h2 className="text-6xl font-bold tracking-tight mb-6 leading-tight">
             <span className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 bg-clip-text text-transparent">
@@ -105,27 +115,17 @@ export default function HomePage() {
         <div className="relative group">
           <div className="absolute -inset-1 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
           <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 p-8 mb-16">
-            <div className="flex items-start gap-4 mb-8">
-              <div className="flex-shrink-0 w-14 h-14 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/20">
-                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-2xl font-bold text-slate-900 mb-1">Start Migration</h3>
-                <p className="text-sm text-slate-500">Enter your repository to begin the transformation journey</p>
-              </div>
+            <div className="mb-8 pb-6 border-b border-slate-100">
+              <h3 className="text-3xl font-bold bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent mb-2">Start Migration</h3>
+              <p className="text-sm text-slate-600">Enter your repository to begin the transformation journey</p>
             </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
               <label
                 htmlFor="repoUrl"
-                className="text-sm font-semibold text-slate-900 flex items-center gap-2"
+                className="text-sm font-semibold text-slate-900"
               >
-                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
                 Repository URL or Local Path
               </label>
               <input
@@ -134,28 +134,20 @@ export default function HomePage() {
                 value={repoUrl}
                 onChange={(e) => setRepoUrl(e.target.value)}
                 placeholder="/home/user/my-banking-app"
-                className="flex h-12 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all shadow-sm hover:border-slate-400"
+                className="flex h-14 w-full rounded-lg border-2 border-slate-300 bg-white px-4 py-3 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:border-violet-500 disabled:cursor-not-allowed disabled:opacity-50 transition-all shadow-sm hover:border-slate-400"
                 required
                 disabled={loading}
               />
-              <p className="text-xs text-slate-500 flex items-start gap-1.5">
-                <svg className="w-3.5 h-3.5 text-slate-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>Enter GitHub URL or absolute path to local repository</span>
+              <p className="text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded-md border border-slate-200">
+                <span className="font-medium">Tip:</span> Enter GitHub URL or absolute path to local repository
               </p>
             </div>
 
             {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                <div className="flex items-start gap-3">
-                  <svg className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                  <div>
-                    <h4 className="text-sm font-semibold text-red-900 mb-0.5">Migration Failed</h4>
-                    <p className="text-sm text-red-800">{error}</p>
-                  </div>
+              <div className="rounded-lg border-2 border-red-300 bg-gradient-to-r from-red-50 to-rose-50 p-4">
+                <div>
+                  <h4 className="text-sm font-bold text-red-900 mb-1">Migration Failed</h4>
+                  <p className="text-sm text-red-800">{error}</p>
                 </div>
               </div>
             )}
@@ -163,40 +155,9 @@ export default function HomePage() {
             <button
               type="submit"
               disabled={loading || !repoUrl}
-              className="inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40 hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]"
+              className="inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-violet-500/30 transition-all hover:shadow-xl hover:shadow-violet-500/40 hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]"
             >
-              {loading ? (
-                <>
-                  <svg
-                    className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Starting Migration...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Start Migration Now
-                </>
-              )}
+              {loading ? 'Starting Migration...' : 'Start Migration Now'}
             </button>
           </form>
           </div>
@@ -204,37 +165,31 @@ export default function HomePage() {
 
         {/* Features Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
-          <div className="group relative bg-white rounded-xl border border-slate-200 p-6 hover:shadow-lg hover:shadow-violet-500/10 hover:border-violet-200 transition-all duration-300">
-            <div className="w-12 h-12 bg-gradient-to-br from-violet-100 to-violet-200 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+          <div className="group relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-lg hover:shadow-violet-500/10 hover:border-violet-300 transition-all duration-300">
+            <div className="mb-4">
+              <span className="inline-block px-3 py-1 bg-gradient-to-r from-violet-100 to-violet-200 text-violet-700 text-xs font-bold rounded-full">REAL-TIME</span>
             </div>
-            <h4 className="font-semibold text-slate-900 mb-2">Real-time Visualization</h4>
+            <h4 className="text-lg font-bold text-slate-900 mb-2">Live Visualization</h4>
             <p className="text-sm text-slate-600 leading-relaxed">
               Watch AI agents work live with progress bars and status updates in a visual workflow
             </p>
           </div>
 
-          <div className="group relative bg-white rounded-xl border border-slate-200 p-6 hover:shadow-lg hover:shadow-emerald-500/10 hover:border-emerald-200 transition-all duration-300">
-            <div className="w-12 h-12 bg-gradient-to-br from-emerald-100 to-emerald-200 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          <div className="group relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-lg hover:shadow-emerald-500/10 hover:border-emerald-300 transition-all duration-300">
+            <div className="mb-4">
+              <span className="inline-block px-3 py-1 bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-700 text-xs font-bold rounded-full">QUALITY</span>
             </div>
-            <h4 className="font-semibold text-slate-900 mb-2">Quality Validation</h4>
+            <h4 className="text-lg font-bold text-slate-900 mb-2">Automated Validation</h4>
             <p className="text-sm text-slate-600 leading-relaxed">
               Automated testing and security scanning of generated code with comprehensive reports
             </p>
           </div>
 
-          <div className="group relative bg-white rounded-xl border border-slate-200 p-6 hover:shadow-lg hover:shadow-indigo-500/10 hover:border-indigo-200 transition-all duration-300">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-100 to-indigo-200 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
-              </svg>
+          <div className="group relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-lg hover:shadow-indigo-500/10 hover:border-indigo-300 transition-all duration-300">
+            <div className="mb-4">
+              <span className="inline-block px-3 py-1 bg-gradient-to-r from-indigo-100 to-indigo-200 text-indigo-700 text-xs font-bold rounded-full">EXPORT</span>
             </div>
-            <h4 className="font-semibold text-slate-900 mb-2">Download Results</h4>
+            <h4 className="text-lg font-bold text-slate-900 mb-2">Complete Package</h4>
             <p className="text-sm text-slate-600 leading-relaxed">
               Get complete microservices and micro-frontends with Docker and Kubernetes configs
             </p>
@@ -247,35 +202,29 @@ export default function HomePage() {
 
           <div className="relative">
             <div className="text-center mb-12">
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium shadow-sm mb-4">
+              <div className="inline-flex items-center gap-3 rounded-full border-2 border-slate-200 bg-white px-6 py-2 text-sm font-semibold shadow-sm mb-4">
                 <span className="text-slate-700">3-Step Process</span>
               </div>
-              <h3 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent mb-2">
+              <h3 className="text-4xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent mb-3">
                 Migration Process
               </h3>
-              <p className="text-slate-600 text-sm">From discovery to deployment in three intelligent phases</p>
+              <p className="text-slate-600">From discovery to deployment in three intelligent phases</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Step 1 */}
               <div className="group relative">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
-                <div className="relative bg-white rounded-xl border border-slate-200 p-6 hover:shadow-xl hover:border-cyan-300 transition-all duration-300">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/20 group-hover:scale-110 transition-transform">
-                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                      </div>
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-cyan-100 text-cyan-700 text-xs font-bold">
-                        1
-                      </div>
+                <div className="relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-xl hover:border-cyan-300 transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 text-white text-2xl font-bold shadow-lg shadow-cyan-500/20 group-hover:scale-110 transition-transform">
+                      1
                     </div>
+                    <span className="px-3 py-1 bg-cyan-100 text-cyan-700 text-xs font-bold rounded-full uppercase tracking-wide">Discovery</span>
                   </div>
-                  <h4 className="font-bold text-slate-900 mb-2 text-lg">Reverse-engineer</h4>
+                  <h4 className="font-bold text-slate-900 mb-3 text-xl">Reverse-engineer</h4>
                   <p className="text-sm text-slate-600 leading-relaxed">
-                    Discovery phase: Understanding "why" the processes and systems exist through intelligent code analysis
+                    Understanding "why" the processes and systems exist through intelligent code analysis and pattern recognition
                   </p>
                 </div>
               </div>
@@ -283,20 +232,14 @@ export default function HomePage() {
               {/* Step 2 */}
               <div className="group relative">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
-                <div className="relative bg-white rounded-xl border border-slate-200 p-6 hover:shadow-xl hover:border-blue-300 transition-all duration-300">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
-                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">
-                        2
-                      </div>
+                <div className="relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-xl hover:border-blue-300 transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white text-2xl font-bold shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
+                      2
                     </div>
+                    <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full uppercase tracking-wide">Planning</span>
                   </div>
-                  <h4 className="font-bold text-slate-900 mb-2 text-lg">Shape</h4>
+                  <h4 className="font-bold text-slate-900 mb-3 text-xl">Shape</h4>
                   <p className="text-sm text-slate-600 leading-relaxed">
                     Comprehensive document generation and specification rationalization for the new architecture
                   </p>
@@ -306,20 +249,14 @@ export default function HomePage() {
               {/* Step 3 */}
               <div className="group relative">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-violet-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
-                <div className="relative bg-white rounded-xl border border-slate-200 p-6 hover:shadow-xl hover:border-indigo-300 transition-all duration-300">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-violet-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform">
-                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                      </div>
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
-                        3
-                      </div>
+                <div className="relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-xl hover:border-indigo-300 transition-all duration-300">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white text-2xl font-bold shadow-lg shadow-indigo-500/20 group-hover:scale-110 transition-transform">
+                      3
                     </div>
+                    <span className="px-3 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-full uppercase tracking-wide">Transform</span>
                   </div>
-                  <h4 className="font-bold text-slate-900 mb-2 text-lg">Modernize</h4>
+                  <h4 className="font-bold text-slate-900 mb-3 text-xl">Modernize</h4>
                   <p className="text-sm text-slate-600 leading-relaxed">
                     Complete transformation with code policies, data migration, and modern architecture patterns
                   </p>
@@ -328,7 +265,194 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+
+        {/* Agents Section - Click to see prompts */}
+        <div className="mt-20">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-3 rounded-full border-2 border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50 px-6 py-2 text-sm font-semibold shadow-sm mb-4">
+              <span className="text-violet-700">ARK Agents</span>
+            </div>
+            <h3 className="text-4xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent mb-3">
+              Intelligent Agents
+            </h3>
+            <p className="text-slate-600">Click on any agent to see the AI prompt</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Code Analyzer Agent */}
+            <button
+              onClick={() => setSelectedAgent('code-analyzer')}
+              className="group relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-xl hover:border-violet-300 transition-all duration-300 text-left"
+            >
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-violet-500 to-indigo-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 text-white text-sm font-bold shadow-lg">
+                    <span>🔍</span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-lg">Code Analyzer</h4>
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed mb-3">
+                  AI-powered code analysis using ARK agent to extract entities, controllers, and services
+                </p>
+                <span className="inline-flex items-center gap-2 text-xs text-violet-600 font-semibold group-hover:gap-3 transition-all">
+                  View Prompt <span>→</span>
+                </span>
+              </div>
+            </button>
+
+            {/* Migration Planner Agent */}
+            <button
+              onClick={() => setSelectedAgent('migration-planner')}
+              className="group relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-xl hover:border-blue-300 transition-all duration-300 text-left"
+            >
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 text-white text-sm font-bold shadow-lg">
+                    <span>📋</span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-lg">Migration Planner</h4>
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed mb-3">
+                  Creates migration blueprint and architecture for microservices decomposition
+                </p>
+                <span className="inline-flex items-center gap-2 text-xs text-blue-600 font-semibold group-hover:gap-3 transition-all">
+                  View Prompt <span>→</span>
+                </span>
+              </div>
+            </button>
+
+            {/* Service Generator Agent */}
+            <button
+              onClick={() => setSelectedAgent('service-generator')}
+              className="group relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-xl hover:border-emerald-300 transition-all duration-300 text-left"
+            >
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-green-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-green-500 text-white text-sm font-bold shadow-lg">
+                    <span>⚙️</span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-lg">Service Generator</h4>
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed mb-3">
+                  Generates production-ready Spring Boot microservices with entities and APIs
+                </p>
+                <span className="inline-flex items-center gap-2 text-xs text-emerald-600 font-semibold group-hover:gap-3 transition-all">
+                  View Prompt <span>→</span>
+                </span>
+              </div>
+            </button>
+
+            {/* Frontend Migrator Agent */}
+            <button
+              onClick={() => setSelectedAgent('frontend-migrator')}
+              className="group relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-xl hover:border-amber-300 transition-all duration-300 text-left"
+            >
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white text-sm font-bold shadow-lg">
+                    <span>🎨</span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-lg">Frontend Migrator</h4>
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed mb-3">
+                  Creates Angular micro-frontends with Module Federation architecture
+                </p>
+                <span className="inline-flex items-center gap-2 text-xs text-amber-600 font-semibold group-hover:gap-3 transition-all">
+                  View Prompt <span>→</span>
+                </span>
+              </div>
+            </button>
+
+            {/* Quality Validator Agent */}
+            <button
+              onClick={() => setSelectedAgent('quality-validator')}
+              className="group relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-xl hover:border-rose-300 transition-all duration-300 text-left"
+            >
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-rose-500 to-pink-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-rose-500 to-pink-500 text-white text-sm font-bold shadow-lg">
+                    <span>✓</span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-lg">Quality Validator</h4>
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed mb-3">
+                  Validates generated code with automated testing and security scanning
+                </p>
+                <span className="inline-flex items-center gap-2 text-xs text-rose-600 font-semibold group-hover:gap-3 transition-all">
+                  View Prompt <span>→</span>
+                </span>
+              </div>
+            </button>
+
+            {/* Container Deployer Agent */}
+            <button
+              onClick={() => setSelectedAgent('container-deployer')}
+              className="group relative bg-white rounded-xl border-2 border-slate-200 p-6 hover:shadow-xl hover:border-indigo-300 transition-all duration-300 text-left"
+            >
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-sm font-bold shadow-lg">
+                    <span>🚀</span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-lg">Container Deployer</h4>
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed mb-3">
+                  Deploys the application with Docker containers and Kubernetes manifests
+                </p>
+                <span className="inline-flex items-center gap-2 text-xs text-indigo-600 font-semibold group-hover:gap-3 transition-all">
+                  View Prompt <span>→</span>
+                </span>
+              </div>
+            </button>
+          </div>
+        </div>
       </main>
+
+      {/* Agent Prompt Modal */}
+      {selectedAgent && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+          onClick={() => setSelectedAgent(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white">
+                  {selectedAgent === 'code-analyzer' && '🔍 Code Analyzer Prompt'}
+                  {selectedAgent === 'migration-planner' && '📋 Migration Planner Prompt'}
+                  {selectedAgent === 'service-generator' && '⚙️ Service Generator Prompt'}
+                  {selectedAgent === 'frontend-migrator' && '🎨 Frontend Migrator Prompt'}
+                  {selectedAgent === 'quality-validator' && '✓ Quality Validator Prompt'}
+                  {selectedAgent === 'container-deployer' && '🚀 Container Deployer Prompt'}
+                </h3>
+                <button
+                  onClick={() => setSelectedAgent(null)}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
+              <AgentPromptDisplay agent={selectedAgent} prompts={agentPrompts} setPrompts={setAgentPrompts} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="bg-white border-t border-slate-200 mt-24">
@@ -336,12 +460,9 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
             {/* Brand */}
             <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="relative w-10 h-10 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-violet-500/20">
-                  <span className="text-white text-lg font-bold">AR</span>
-                </div>
-                <div>
-                  <h3 className="font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">Agent@Scale</h3>
+              <div className="mb-4">
+                <div className="inline-block px-4 py-2 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-lg shadow-lg shadow-violet-500/20 mb-3">
+                  <h3 className="font-bold text-white text-lg tracking-tight">Agent@Scale</h3>
                 </div>
               </div>
               <p className="text-sm text-slate-600 leading-relaxed">
@@ -351,7 +472,7 @@ export default function HomePage() {
 
             {/* Technology */}
             <div>
-              <h4 className="font-semibold text-slate-900 mb-4 text-sm">Powered By</h4>
+              <h4 className="font-bold text-slate-900 mb-4 text-sm uppercase tracking-wide">Powered By</h4>
               <ul className="space-y-3 text-sm text-slate-600">
                 <li className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
@@ -370,22 +491,16 @@ export default function HomePage() {
 
             {/* Resources */}
             <div>
-              <h4 className="font-semibold text-slate-900 mb-4 text-sm">Resources</h4>
+              <h4 className="font-bold text-slate-900 mb-4 text-sm uppercase tracking-wide">Resources</h4>
               <ul className="space-y-3">
                 <li>
                   <a
                     href="https://github.com/mckinsey/ark"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-slate-600 hover:text-violet-600 transition-colors inline-flex items-center gap-2 group"
+                    className="text-sm text-slate-600 hover:text-violet-600 transition-colors font-medium"
                   >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-                    </svg>
-                    GitHub
-                    <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
+                    GitHub Repository
                   </a>
                 </li>
                 <li>
@@ -393,15 +508,19 @@ export default function HomePage() {
                     href="https://docs.n8n.io/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-slate-600 hover:text-violet-600 transition-colors inline-flex items-center gap-2 group"
+                    className="text-sm text-slate-600 hover:text-violet-600 transition-colors font-medium"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                    </svg>
                     Documentation
-                    <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://docs.n8n.io/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-slate-600 hover:text-violet-600 transition-colors font-medium"
+                  >
+                    API Reference
                   </a>
                 </li>
               </ul>
@@ -410,11 +529,11 @@ export default function HomePage() {
 
           {/* Bottom bar */}
           <div className="pt-8 border-t border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4">
-            <p className="text-xs text-slate-500">
+            <p className="text-sm text-slate-600 font-medium">
               © 2026 Agent@Scale. Built with Claude Sonnet 4.5
             </p>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700">
+              <span className="inline-flex items-center gap-2 rounded-full border-2 border-emerald-200 bg-emerald-50 px-4 py-1.5 text-xs font-bold text-emerald-700">
                 <span className="relative flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
@@ -425,6 +544,211 @@ export default function HomePage() {
           </div>
         </div>
       </footer>
+    </div>
+  );
+}
+
+// Component to fetch and display agent prompts
+function AgentPromptDisplay({
+  agent,
+  prompts,
+  setPrompts,
+}: {
+  agent: string;
+  prompts: Record<string, string>;
+  setPrompts: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchPrompt = async () => {
+      // Check if we already have the prompt cached
+      if (prompts[agent]) {
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError('');
+
+      try {
+        // For code-analyzer, fetch from the API
+        if (agent === 'code-analyzer') {
+          const response = await fetch('http://localhost:4000/api/repo-migration/code-analyzer-prompt');
+          if (response.ok) {
+            const data = await response.json();
+            setPrompts((prev) => ({ ...prev, [agent]: data.promptTemplate }));
+          } else {
+            throw new Error('Failed to fetch prompt');
+          }
+        } else {
+          // For other agents, use static prompts (can be enhanced later)
+          const staticPrompts: Record<string, string> = {
+            'migration-planner': `You are a software architect specializing in microservices and micro-frontends.
+Given the code analysis report, create a detailed migration plan that includes:
+
+1. Microservices Decomposition:
+   - Auth Service: JWT authentication, user management
+   - Client Service: Client CRUD, client profiles
+   - Account Service: Account management, balance operations
+   - Transaction Service: Transaction history, transaction processing
+   - Card Service: Card management, card operations
+
+2. Micro-frontend Modules:
+   - Shell: Main container, routing, shared state
+   - Auth: Login, registration, password reset
+   - Dashboard: Account overview, summary widgets
+   - Transfers: Money transfers, beneficiary management
+   - Cards: Card management, card operations
+
+3. API Contracts (OpenAPI 3.0 specifications)
+4. Database schemas (JPA entities per service)
+5. Shared libraries and common code
+
+Output a comprehensive migration blueprint in JSON format.`,
+            'service-generator': `You are a Spring Boot expert. Generate production-ready microservices code.
+
+For each service, generate:
+1. Maven pom.xml with Spring Boot 3.2.x, Java 17
+2. Application class with @SpringBootApplication
+3. JPA entities with proper relationships
+4. Repository interfaces (Spring Data JPA)
+5. Service layer with business logic
+6. REST controllers with OpenAPI annotations
+7. Security configuration (JWT validation)
+8. application.yml with profiles (dev, prod)
+9. Dockerfile for containerization
+10. Tests (unit and integration)
+
+Ensure code follows best practices: proper error handling, validation, logging, and documentation.`,
+            'frontend-migrator': `You are an Angular and Webpack Module Federation expert.
+
+Generate micro-frontends using:
+1. Angular 17+ with standalone components
+2. Webpack Module Federation for runtime integration
+3. Shared libraries for common code
+4. Routing with lazy loading
+5. State management (NgRx or services)
+6. Material Design UI components
+7. TypeScript with strict mode
+8. Unit tests (Jasmine/Jest)
+9. E2E tests (Cypress)
+
+Each micro-frontend should be:
+- Independently deployable
+- Loosely coupled
+- Well-documented
+- Production-ready`,
+            'quality-validator': `You are a QA and DevOps expert. Validate the generated code:
+
+1. Code Quality:
+   - Run linters (ESLint, TSLint, Checkstyle)
+   - Check code coverage (minimum 70%)
+   - Verify coding standards compliance
+   - Check for security vulnerabilities
+
+2. Build Verification:
+   - Compile all services
+   - Run unit tests
+   - Run integration tests
+   - Build Docker images
+
+3. Security Scanning:
+   - Dependency vulnerability check
+   - OWASP security scan
+   - Check for hardcoded secrets
+
+4. Architecture Validation:
+   - Verify service boundaries
+   - Check API contracts
+   - Validate database schemas
+
+Output a comprehensive validation report with pass/fail status and recommendations.`,
+            'container-deployer': `You are a DevOps and containerization expert. Deploy the generated application:
+
+1. Docker Setup:
+   - Build optimized Docker images
+   - Create docker-compose.yml for local development
+   - Configure networking and volumes
+   - Set up environment variables
+
+2. Kubernetes Deployment:
+   - Create Deployment manifests
+   - Configure Services (ClusterIP, LoadBalancer)
+   - Set up Ingress rules
+   - Configure ConfigMaps and Secrets
+   - Define ResourceQuotas and LimitRanges
+
+3. Monitoring:
+   - Prometheus metrics
+   - Grafana dashboards
+   - Logging (ELK stack)
+   - Health checks and readiness probes
+
+4. CI/CD Pipeline:
+   - GitHub Actions workflow
+   - Automated testing
+   - Container registry push
+   - Deployment automation
+
+Ensure production-ready deployment with high availability and scalability.`,
+          };
+
+          setPrompts((prev) => ({
+            ...prev,
+            [agent]: staticPrompts[agent] || 'Prompt not available',
+          }));
+        }
+      } catch (err: any) {
+        setError(err.message || 'Failed to load prompt');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPrompt();
+  }, [agent, prompts, setPrompts]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6 text-center">
+        <p className="text-red-800 font-semibold">Failed to load prompt</p>
+        <p className="text-sm text-red-600 mt-2">{error}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
+        <p className="text-sm text-slate-600">
+          This is the prompt sent to the AI agent. The agent uses these instructions to perform its task.
+        </p>
+      </div>
+
+      <div className="bg-slate-900 rounded-lg p-6 overflow-x-auto">
+        <pre className="text-sm text-slate-300 whitespace-pre-wrap font-mono leading-relaxed">
+          {prompts[agent] || 'Loading...'}
+        </pre>
+      </div>
+
+      {agent === 'code-analyzer' && (
+        <div className="mt-4 bg-violet-50 border border-violet-200 rounded-lg p-4">
+          <p className="text-sm text-violet-800">
+            <span className="font-semibold">Note:</span> This prompt is loaded dynamically from the ARK agent system.
+            The actual prompt includes your source code files when analysis runs.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

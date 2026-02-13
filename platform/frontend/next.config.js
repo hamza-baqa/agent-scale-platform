@@ -3,6 +3,9 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
 
+  // Enable standalone output for Docker
+  output: 'standalone',
+
   // API proxy for development
   async rewrites() {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';

@@ -146,3 +146,32 @@ export const emitDeploymentFailed = (migrationId: string, error: string) => {
     logger.error(`Emitted deployment-failed event`, { migrationId, error });
   }
 };
+
+/**
+ * Emit agent log event for real-time log streaming
+ */
+export const emitAgentLog = (
+  migrationId: string,
+  agent: string,
+  level: 'info' | 'warn' | 'error' | 'debug' | 'success',
+  message: string,
+  data?: any
+) => {
+  // Always log to winston
+  logger.info(message, { migrationId, agent, level, ...(data || {}) });
+
+  // Emit to WebSocket if available
+  if (ioInstance) {
+    logger.info(`📡 Emitting agent-log event`, { migrationId, agent, level, messagePreview: message.substring(0, 50) });
+    ioInstance.to(`migration-${migrationId}`).emit('agent-log', {
+      migrationId,
+      agent,
+      level,
+      message,
+      data,
+      timestamp: new Date().toISOString()
+    });
+  } else {
+    logger.warn(`⚠️ Cannot emit agent-log - ioInstance is null`);
+  }
+};

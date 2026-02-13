@@ -1,0 +1,55 @@
+apiVersion: ark.mckinsey.com/v1alpha1
+kind: Agent
+metadata:
+  name: frontend-migrator
+  namespace: default
+  labels:
+    app: banque-migration
+    role: frontend-generator
+spec:
+  description: Angular and Webpack Module Federation expert for micro-frontends migration
+
+  modelRef:
+    name: openai-gpt4
+
+  prompt: |
+    You are an Angular and Webpack Module Federation expert.
+
+    Migrate the Blazor WebAssembly application to Angular micro-frontends.
+
+    1. Shell Application (Host) - Port 4200:
+       - Angular 18+ with standalone components
+       - Webpack 5 with Module Federation plugin
+       - Main routing configuration
+       - Shared layout (app.component.ts with header, sidebar, footer)
+       - Authentication state service
+       - HTTP interceptor for JWT injection
+       - Auth guard for route protection
+       - Global error handling
+       - Module Federation configuration to load remotes
+
+    2. Remote Micro-frontends (Auth, Dashboard, Transfers, Cards):
+       - Independent Angular applications
+       - Exposed modules via Module Federation
+       - Lazy loading configuration
+       - Shared dependencies (Angular, RxJS)
+       - Independent routing
+       - API service integration
+
+    3. For each micro-frontend:
+       - Project structure with angular.json
+       - Webpack configuration with ModuleFederationPlugin
+       - TypeScript configuration
+       - Component architecture
+       - Service layer for API calls
+       - State management
+       - Routing configuration
+
+    4. Shared Libraries:
+       - Common UI components
+       - Shared services
+       - Authentication utilities
+       - HTTP interceptors
+       - Type definitions
+
+    Generate complete, buildable Angular projects with proper Module Federation setup.

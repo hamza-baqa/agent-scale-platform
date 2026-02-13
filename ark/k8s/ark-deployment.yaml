@@ -1,0 +1,285 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ark-mock-service
+  namespace: default
+data:
+  mock-ark-service.js: |
+    #!/usr/bin/env node
+    const http = require('http');
+    const https = require('https');
+
+    const PORT = 80;
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+    console.log('='.repeat(60));
+    console.log('Mock ARK Service');
+    console.log('='.repeat(60));
+    console.log('');
+    console.log('Purpose: Simulate ARK API for local testing');
+    console.log(`Port: ${PORT}`);
+    console.log('');
+    console.log('Endpoints:');
+    console.log('  GET  /health');
+    console.log('  POST /api/v1/agents/:namespace/:agent/invoke');
+    console.log('');
+
+    // Call Anthropic API
+    function callAnthropic(prompt, callback) {
+      if (!ANTHROPIC_API_KEY) {
+        callback({ error: 'ANTHROPIC_API_KEY not set' });
+        return;
+      }
+
+      const data = JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        temperature: 0.7,
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const options = {
+        hostname: 'api.anthropic.com',
+        path: '/v1/messages',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'Content-Length': data.length
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try {
+            const result = JSON.parse(body);
+            callback(null, result);
+          } catch (e) {
+            callback({ error: 'Failed to parse Anthropic response', body });
+          }
+        });
+      });
+
+      req.on('error', (e) => callback({ error: e.message }));
+      req.write(data);
+      req.end();
+    }
+
+    // Create HTTP server
+    const server = http.createServer((req, res) => {
+      console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+
+      // CORS headers
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
+      }
+
+      // Health check
+      if (req.url === '/health' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'healthy', service: 'mock-ark' }));
+        return;
+      }
+
+      // Agent invocation
+      const match = req.url.match(/^\/api\/v1\/agents\/([^\/]+)\/([^\/]+)\/invoke$/);
+      if (match && req.method === 'POST') {
+        const namespace = match[1];
+        const agent = match[2];
+
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const payload = JSON.parse(body);
+            const prompt = payload.input || payload.prompt || '';
+
+            console.log(`Agent: ${namespace}/${agent}`);
+            console.log(`Prompt: ${prompt.substring(0, 100)}...`);
+
+            callAnthropic(prompt, (err, result) => {
+              if (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err }));
+              } else {
+                const output = result.content?.[0]?.text || JSON.stringify(result);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  agent: agent,
+                  namespace: namespace,
+                  output: output,
+                  status: 'success'
+                }));
+              }
+            });
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON' }));
+          }
+        });
+        return;
+      }
+
+      // 404
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+    });
+
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`✓ Mock ARK Service running on port ${PORT}`);
+      console.log('');
+    });
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ark-api
+  namespace: default
+  labels:
+    app: ark-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ark-api
+  template:
+    metadata:
+      labels:
+        app: ark-api
+    spec:
+      containers:
+      - name: ark-api
+        image: node:22-alpine
+        command: ["node", "/app/mock-ark-service.js"]
+        ports:
+        - containerPort: 80
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: anthropic-api-key
+              key: api-key
+              optional: true
+        volumeMounts:
+        - name: ark-script
+          mountPath: /app
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: ark-script
+        configMap:
+          name: ark-mock-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ark-api
+  namespace: default
+spec:
+  selector:
+    app: ark-api
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ark-dashboard
+  namespace: default
+  labels:
+    app: ark-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ark-dashboard
+  template:
+    metadata:
+      labels:
+        app: ark-dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: nginx:alpine
+        ports:
+        - containerPort: 3000
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          cat > /usr/share/nginx/html/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>ARK Dashboard</title>
+            <style>
+              body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
+              h1 { color: #333; }
+              .status { background: #e7f7e7; padding: 15px; border-radius: 5px; }
+              .agent { background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; }
+            </style>
+          </head>
+          <body>
+            <h1>🤖 ARK Dashboard</h1>
+            <div class="status">
+              <h2>✅ Status: Running</h2>
+              <p>Mock ARK Service is operational</p>
+            </div>
+            <h2>Deployed Agents</h2>
+            <div class="agent">📊 code-analyzer - Analyzes source code</div>
+            <div class="agent">📋 migration-planner - Plans microservices</div>
+            <div class="agent">⚙️ service-generator - Generates Spring Boot</div>
+            <div class="agent">🎨 frontend-migrator - Generates Angular</div>
+            <div class="agent">✅ quality-validator - Validates code</div>
+          </body>
+          </html>
+          EOF
+          sed -i 's/listen\s*80;/listen 3000;/' /etc/nginx/conf.d/default.conf
+          nginx -g 'daemon off;'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ark-dashboard
+  namespace: default
+spec:
+  selector:
+    app: ark-dashboard
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+  type: ClusterIP

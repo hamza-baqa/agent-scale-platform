@@ -19,6 +19,7 @@ interface ComponentConfig {
   name: string;
   template: string;
   hasForm?: boolean;
+  styles?: string;
 }
 
 export class AngularMicroFrontendGenerator {
@@ -81,8 +82,8 @@ export class AngularMicroFrontendGenerator {
       scripts: {
         ng: 'ng',
         start: `ng serve --port ${config.port}`,
-        build: 'ng build --configuration production',
-        watch: 'ng build --watch --configuration development',
+        build: 'ng build',
+        watch: 'ng build --watch',
         test: 'ng test',
         lint: 'ng lint'
       },
@@ -619,7 +620,7 @@ export class ${component.name}Component implements OnInit {
     const dockerfile = `FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 COPY . .
 RUN npm run build
 

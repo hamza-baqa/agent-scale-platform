@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown';
 interface CodeDocumentationProps {
   data: any;
   migrationId: string;
+  onClose?: () => void;
 }
 
 // Mermaid Diagram Component with error handling
@@ -64,11 +65,11 @@ function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
 
   if (error) {
     return (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-        <p className="text-sm text-yellow-800">⚠️ {error}</p>
+      <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
+        <p className="text-sm font-semibold text-yellow-900 mb-1">Warning: {error}</p>
         <details className="mt-2">
-          <summary className="text-xs text-yellow-600 cursor-pointer">Show diagram code</summary>
-          <pre className="text-xs mt-2 text-gray-600 overflow-auto">{chart}</pre>
+          <summary className="text-xs text-yellow-700 cursor-pointer font-medium">Show diagram code</summary>
+          <pre className="text-xs mt-2 text-gray-600 overflow-auto bg-white p-2 rounded border border-yellow-200">{chart}</pre>
         </details>
       </div>
     );
@@ -78,11 +79,11 @@ function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
 }
 
 // Chat Interface Component
-function ChatInterface({ data, migrationId }: { data: any; migrationId: string }) {
+function ChatInterface({ data, migrationId, onClose }: { data: any; migrationId: string; onClose?: () => void }) {
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([
     {
       role: 'assistant',
-      content: `Hello! I'm your **intelligent documentation assistant**. I can explain:\n\n🎯 **Business Functions**: What the code does from a business perspective\n💼 **User Workflows**: How users interact with features\n🏗️ **Technical Architecture**: System design and patterns\n📊 **Data Models**: What entities represent and their purpose\n🔄 **Business Processes**: End-to-end workflows and logic\n\nI provide both **business** and **technical** explanations. What would you like to know?`
+      content: `Hello! I'm your **Documentation Assistant** for YOUR UPLOADED CODE.\n\nI have analyzed your **input/legacy codebase** (the code you uploaded) and can answer ANY technical question about it.\n\n**I can explain YOUR uploaded code:**\n\n**Entities & Models**: What entities exist in YOUR code and their properties\n\n**Controllers & APIs**: What endpoints YOUR application has and what they do\n\n**Services & Logic**: Business logic implemented in YOUR codebase\n\n**Architecture**: How YOUR current application is structured\n\n**Database Schema**: Tables and relationships in YOUR legacy system\n\n**Technical Details**: Methods, annotations, and implementation details from YOUR code\n\n**Important**: I answer questions about YOUR INPUT CODE (what you uploaded), NOT the generated microservices.\n\nAsk me anything about your legacy application!`
     }
   ]);
   const [input, setInput] = useState('');
@@ -107,30 +108,13 @@ function ChatInterface({ data, migrationId }: { data: any; migrationId: string }
     setLoading(true);
 
     try {
-      // Call backend API to get AI response about the documentation
-      const response = await fetch(`http://localhost:4000/api/migrations/${migrationId}/chat`, {
+      // Call backend API to get AI-powered response using ARK
+      const response = await fetch(`http://localhost:4000/api/migrations/${migrationId}/code-chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMessage,
-          context: {
-            // Full documentation context
-            entities: data.entities?.list || [],
-            controllers: data.summary?.controllers || 0,
-            framework: data.summary?.framework || '',
-            features: data.features || {},
-            architecture: data.architecture || {},
-            apiEndpoints: data.apiEndpoints?.summary || {},
-            techStack: data.techStack || {},
-            overview: data.overview || {},
-            // Additional context for better answers
-            totalEndpoints: data.apiEndpoints?.summary?.total || 0,
-            projectName: data.title || 'Application',
-            entityNames: (data.entities?.list || []).map((e: any) => e.name),
-            featureList: Object.entries(data.features || {}).map(([key, val]: [string, any]) => val.title),
-            // DETAILED analysis data for intelligent answers
-            detailedAnalysis: data.detailedAnalysis || null
-          }
+          conversationHistory: messages
         })
       });
 
@@ -180,26 +164,39 @@ function ChatInterface({ data, migrationId }: { data: any; migrationId: string }
   };
 
   const suggestedQuestions = [
-    "What does this application do from a business perspective?",
-    "What business problem does the Account entity solve?",
-    "Explain the money transfer workflow",
-    "What are the main user workflows?",
-    "What business value does this provide?",
-    "How does authentication work for users?",
+    "What entities exist in my uploaded code?",
+    "Show me all API endpoints in my legacy application",
+    "Explain the architecture of my current system",
+    "What controllers does my uploaded code have?",
+    "Show me the database schema in my input code",
+    "What business logic is in my legacy services?",
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-2xl shadow-xl border border-gray-200">
+    <div className="flex flex-col h-full bg-white rounded-2xl shadow-xl border-2 border-gray-200">
       {/* Chat Header */}
       <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-4 rounded-t-2xl">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-            <span className="text-2xl">🤖</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="px-3 py-1 bg-white/20 rounded-lg">
+              <span className="text-sm font-bold">AI</span>
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">Documentation Assistant</h3>
+              <p className="text-sm text-purple-100">Ask me anything about YOUR uploaded code</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-lg font-bold">Documentation Assistant</h3>
-            <p className="text-sm text-purple-100">Ask me anything about the code</p>
-          </div>
+
+          {/* Close Button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-medium transition-all"
+              title="Close sidebar"
+            >
+              Close
+            </button>
+          )}
         </div>
       </div>
 
@@ -260,17 +257,15 @@ function ChatInterface({ data, migrationId }: { data: any; migrationId: string }
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about the documentation..."
-            className="flex-1 px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="flex-1 px-4 py-3 bg-gray-50 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
             disabled={loading}
           />
           <button
             type="submit"
             disabled={loading || !input.trim()}
-            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-xl hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
+            Send
           </button>
         </div>
       </form>
@@ -278,7 +273,7 @@ function ChatInterface({ data, migrationId }: { data: any; migrationId: string }
   );
 }
 
-export default function CodeDocumentationWithChat({ data, migrationId }: CodeDocumentationProps) {
+export default function CodeDocumentationWithChat({ data, migrationId, onClose }: CodeDocumentationProps) {
   const [activeSection, setActiveSection] = useState('overview');
   const [isScrolled, setIsScrolled] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -292,11 +287,11 @@ export default function CodeDocumentationWithChat({ data, migrationId }: CodeDoc
   }, []);
 
   const sections = [
-    { id: 'overview', label: 'Overview', icon: '📘', color: 'from-blue-500 to-cyan-500' },
-    { id: 'architecture', label: 'Architecture', icon: '🏗️', color: 'from-indigo-500 to-purple-500' },
-    { id: 'database', label: 'Database', icon: '💾', color: 'from-purple-500 to-pink-500' },
-    { id: 'api', label: 'API Docs', icon: '🔌', color: 'from-green-500 to-emerald-500' },
-    { id: 'features', label: 'Features', icon: '✨', color: 'from-yellow-500 to-orange-500' },
+    { id: 'overview', label: 'Overview', color: 'from-blue-500 to-cyan-500' },
+    { id: 'architecture', label: 'Architecture', color: 'from-indigo-500 to-purple-500' },
+    { id: 'database', label: 'Database', color: 'from-purple-500 to-pink-500' },
+    { id: 'api', label: 'API Docs', color: 'from-green-500 to-emerald-500' },
+    { id: 'features', label: 'Features', color: 'from-yellow-500 to-orange-500' },
   ];
 
   const scrollToSection = (sectionId: string) => {
@@ -322,35 +317,27 @@ export default function CodeDocumentationWithChat({ data, migrationId }: CodeDoc
       <div className="fixed bottom-8 right-8 z-[9999]">
         <button
           onClick={() => setShowChat(!showChat)}
-          className="w-16 h-16 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-full shadow-2xl hover:scale-110 transition-all duration-300 flex items-center justify-center group relative"
+          className="px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-xl shadow-2xl hover:scale-110 transition-all duration-300 flex items-center justify-center gap-2 group relative"
           title="Ask me about the documentation"
         >
           {showChat ? (
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <span>Close Chat</span>
           ) : (
             <>
-              <span className="text-3xl">💬</span>
-              <span className="absolute -top-1 -right-1 flex h-3 w-3">
+              <span>Ask AI</span>
+              <span className="relative flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
               </span>
             </>
           )}
         </button>
-        {!showChat && (
-          <div className="absolute bottom-full right-0 mb-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-xl whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-            Ask questions about the code
-            <div className="absolute top-full right-8 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-gray-900"></div>
-          </div>
-        )}
       </div>
 
       {/* Chat Panel */}
       {showChat && (
         <div className="fixed bottom-28 right-8 w-[450px] h-[700px] z-[9998] animate-fadeIn shadow-2xl">
-          <ChatInterface data={data} migrationId={migrationId} />
+          <ChatInterface data={data} migrationId={migrationId} onClose={() => setShowChat(false)} />
         </div>
       )}
 
@@ -358,14 +345,11 @@ export default function CodeDocumentationWithChat({ data, migrationId }: CodeDoc
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-              <span className="text-4xl">📚</span>
+          <div className="mb-6">
+            <div className="inline-block px-6 py-3 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl shadow-lg mb-4">
+              <h1 className="text-3xl font-bold text-white tracking-tight">{data.title || 'Code Documentation'}</h1>
             </div>
-            <div>
-              <h1 className="text-4xl font-bold text-gray-900">{data.title || 'Code Documentation'}</h1>
-              <p className="text-gray-500">Version {data.version || '1.0.0'} • {new Date(data.lastUpdated).toLocaleDateString()}</p>
-            </div>
+            <p className="text-gray-600 text-sm font-medium">Version {data.version || '1.0.0'} • {new Date(data.lastUpdated).toLocaleDateString()}</p>
           </div>
         </div>
 
@@ -376,13 +360,12 @@ export default function CodeDocumentationWithChat({ data, migrationId }: CodeDoc
               <button
                 key={section.id}
                 onClick={() => scrollToSection(section.id)}
-                className={`px-6 py-3 rounded-xl font-medium transition-all ${
+                className={`px-6 py-3 rounded-xl font-bold transition-all text-sm uppercase tracking-wide ${
                   activeSection === section.id
                     ? `bg-gradient-to-r ${section.color} text-white shadow-lg scale-105`
-                    : 'bg-white text-gray-700 hover:bg-gray-50 shadow'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 shadow border-2 border-gray-200'
                 }`}
               >
-                <span className="mr-2">{section.icon}</span>
                 {section.label}
               </button>
             ))}
@@ -392,11 +375,11 @@ export default function CodeDocumentationWithChat({ data, migrationId }: CodeDoc
         {/* Content Sections */}
         <div className="space-y-12">
           {/* Overview Section */}
-          <section id="section-overview" className="bg-white rounded-3xl shadow-xl p-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-              <span className="text-4xl">📘</span>
-              Overview
-            </h2>
+          <section id="section-overview" className="bg-white rounded-3xl shadow-xl p-8 border-2 border-gray-100">
+            <div className="mb-6">
+              <span className="inline-block px-4 py-2 bg-blue-100 text-blue-700 text-sm font-bold rounded-full mb-3">OVERVIEW</span>
+              <h2 className="text-3xl font-bold text-gray-900">Project Overview</h2>
+            </div>
             <div className="prose prose-lg max-w-none">
               <p className="text-gray-700 leading-relaxed">{data.overview?.description}</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6">
@@ -417,11 +400,11 @@ export default function CodeDocumentationWithChat({ data, migrationId }: CodeDoc
           </section>
 
           {/* Architecture Section */}
-          <section id="section-architecture" className="bg-white rounded-3xl shadow-xl p-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-              <span className="text-4xl">🏗️</span>
-              Application Architecture
-            </h2>
+          <section id="section-architecture" className="bg-white rounded-3xl shadow-xl p-8 border-2 border-gray-100">
+            <div className="mb-6">
+              <span className="inline-block px-4 py-2 bg-indigo-100 text-indigo-700 text-sm font-bold rounded-full mb-3">ARCHITECTURE</span>
+              <h2 className="text-3xl font-bold text-gray-900">Application Architecture</h2>
+            </div>
             <p className="text-gray-700 mb-6">{data.architecture?.description}</p>
             <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-2xl p-8 border-2 border-indigo-200">
               <h3 className="text-xl font-semibold text-gray-900 mb-6 text-center">System Architecture Diagram</h3>
@@ -437,11 +420,11 @@ export default function CodeDocumentationWithChat({ data, migrationId }: CodeDoc
           </section>
 
           {/* Database Section */}
-          <section id="section-database" className="bg-white rounded-3xl shadow-xl p-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-              <span className="text-4xl">💾</span>
-              Database Schema
-            </h2>
+          <section id="section-database" className="bg-white rounded-3xl shadow-xl p-8 border-2 border-gray-100">
+            <div className="mb-6">
+              <span className="inline-block px-4 py-2 bg-purple-100 text-purple-700 text-sm font-bold rounded-full mb-3">DATABASE</span>
+              <h2 className="text-3xl font-bold text-gray-900">Database Schema</h2>
+            </div>
             <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-8 border-2 border-purple-200 mb-6">
               <h3 className="text-xl font-semibold text-gray-900 mb-6 text-center">Entity Relationship Diagram</h3>
               {data.entities?.diagram ? (
@@ -467,11 +450,11 @@ export default function CodeDocumentationWithChat({ data, migrationId }: CodeDoc
           </section>
 
           {/* API Section */}
-          <section id="section-api" className="bg-white rounded-3xl shadow-xl p-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-              <span className="text-4xl">🔌</span>
-              API Documentation
-            </h2>
+          <section id="section-api" className="bg-white rounded-3xl shadow-xl p-8 border-2 border-gray-100">
+            <div className="mb-6">
+              <span className="inline-block px-4 py-2 bg-green-100 text-green-700 text-sm font-bold rounded-full mb-3">API</span>
+              <h2 className="text-3xl font-bold text-gray-900">API Documentation</h2>
+            </div>
             <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-8 border-2 border-green-200">
               <h3 className="text-xl font-semibold text-gray-900 mb-6 text-center">API Structure</h3>
               {data.apiEndpoints?.diagram ? (
@@ -499,11 +482,11 @@ export default function CodeDocumentationWithChat({ data, migrationId }: CodeDoc
           </section>
 
           {/* Features Section */}
-          <section id="section-features" className="bg-white rounded-3xl shadow-xl p-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-              <span className="text-4xl">✨</span>
-              Features & Capabilities
-            </h2>
+          <section id="section-features" className="bg-white rounded-3xl shadow-xl p-8 border-2 border-gray-100">
+            <div className="mb-6">
+              <span className="inline-block px-4 py-2 bg-yellow-100 text-yellow-700 text-sm font-bold rounded-full mb-3">FEATURES</span>
+              <h2 className="text-3xl font-bold text-gray-900">Features & Capabilities</h2>
+            </div>
             {data.features && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {Object.entries(data.features).map(([key, feature]: [string, any]) => (

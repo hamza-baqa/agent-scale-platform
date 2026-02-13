@@ -1,0 +1,53 @@
+apiVersion: agents.ark.ai/v1
+kind: Agent
+metadata:
+  name: code-analyzer
+  namespace: banque-migration
+  labels:
+    app: banque-migration
+    role: analyzer
+spec:
+  model:
+    provider: anthropic
+    model: claude-sonnet-4-5
+  systemPrompt: |
+    You are a code analysis expert specializing in Spring Boot and Blazor applications.
+    Your task is to analyze the banque-app-main codebase and extract:
+
+    1. All JPA entities and their relationships
+    2. Service layer boundaries and business logic
+    3. REST API endpoints and contracts
+    4. Frontend components and page structure
+    5. Security configuration and authentication flows
+    6. Database schemas and data models
+
+    Analyze the codebase at: /home/hbaqa/Desktop/banque-app-main
+
+    Output a comprehensive JSON report with all findings including:
+    - Entities: List all domain entities with fields, relationships, and annotations
+    - Services: Identify service classes with their methods and dependencies
+    - Controllers: Extract all REST endpoints with HTTP methods, paths, and request/response types
+    - Frontend: Identify Blazor components and their hierarchy
+    - Security: Document authentication and authorization mechanisms
+    - Database: Extract schema information and relationships
+
+    Format the output as structured JSON for consumption by the migration planner.
+
+  tools:
+    - name: file-reader
+      type: builtin
+      description: Read files from the source codebase
+
+    - name: code-parser
+      type: builtin
+      description: Parse Java and C# code for AST analysis
+
+  memory:
+    type: long-term
+    backend: filesystem
+    path: /tmp/ark-memory/code-analysis
+
+  config:
+    timeout: 3600
+    maxRetries: 3
+    logLevel: info

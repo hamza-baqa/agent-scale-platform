@@ -1,0 +1,40 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Testing
+coverage
+.nyc_output
+
+# Production
+build
+dist
+.next
+
+# Misc
+.DS_Store
+*.pem
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Debug
+.vscode
+.idea
+
+# Git
+.git
+.gitignore
+
+# Workspace
+platform/backend/workspace
+platform/backend/outputs
+platform/backend/logs
+
+# Run files
+.run-pids
+
+# Backup files
+*.backup

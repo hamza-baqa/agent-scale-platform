@@ -53,6 +53,8 @@ class WebSocketService {
         reconnectionAttempts: 5,
       });
 
+      if (!this.socket) return;
+
       this.socket.on('connect', () => {
         console.log('✅ WebSocket connected successfully');
         resolve();
@@ -98,6 +100,10 @@ class WebSocketService {
       this.socket.on('deployment-failed', (data) => {
         console.log('❌ Deployment failed:', data);
         this.emit('deployment-failed', data);
+      });
+      this.socket.on('agent-log', (data) => {
+        console.log('📜 Agent log:', data);
+        this.emit('agent-log', data);
       });
       this.socket.on('error', (data) => this.emit('error', data));
     });

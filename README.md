@@ -70,7 +70,35 @@ This project demonstrates **automated code migration** where:
 - **Kubernetes Native**: Scalable, cloud-ready deployment
 - **Extensible**: Add custom agents and workflows
 
-## 🚀 Quick Start
+## 🚀 Simple Quick Start (Recommended)
+
+Run everything with **one command** for local development:
+
+```bash
+# 1. Set your Anthropic API key (required for Mock ARK)
+export ANTHROPIC_API_KEY=your-api-key-here
+
+# 2. Start everything (Mock ARK + Backend + Frontend)
+./RUN-SIMPLE.sh
+
+# 3. Open browser
+open http://localhost:3000
+
+# 4. To stop everything
+./STOP-ALL.sh
+```
+
+**Features:**
+- ✅ **Simple setup** - No Kubernetes needed
+- ✅ **Mock ARK service** - Test ARK agents locally
+- ✅ **One command** - Starts everything automatically
+- ✅ **Fast setup** - Ready in minutes
+
+---
+
+## 🚀 Full Production Setup (Advanced)
+
+For Kubernetes deployment with ARK agents:
 
 ### Prerequisites
 

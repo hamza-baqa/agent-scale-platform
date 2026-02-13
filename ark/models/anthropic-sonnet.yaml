@@ -1,0 +1,23 @@
+apiVersion: ark.mckinsey.com/v1alpha1
+kind: Model
+metadata:
+  name: anthropic-sonnet
+  namespace: banque-migration
+spec:
+  provider: openai
+  type: completions
+  model:
+    value: claude-sonnet-4-20250514
+  config:
+    openai:
+      baseUrl:
+        value: https://api.anthropic.com/v1
+      apiKey:
+        valueFrom:
+          secretKeyRef:
+            name: anthropic-api-key
+            key: api-key
+      headers:
+        - name: anthropic-version
+          value:
+            value: "2023-06-01"

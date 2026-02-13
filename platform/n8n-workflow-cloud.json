@@ -1,0 +1,459 @@
+{
+  "name": "Agent@Scale Migration - Cloud Production",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "migration-ark",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [120, 460],
+      "webhookId": "migration-ark",
+      "notes": "Receives migration requests via POST"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "repositoryUrl",
+              "value": "={{ $json.body.repositoryUrl || 'https://github.com/hamza-baqa/banque-app' }}"
+            },
+            {
+              "name": "outputPath",
+              "value": "={{ $json.body.outputPath || '/workspace/output' }}"
+            },
+            {
+              "name": "repositoryPath",
+              "value": "={{ $json.body.repositoryPath || '/workspace/repos/banque-app' }}"
+            },
+            {
+              "name": "notificationUrl",
+              "value": "={{ $json.body.notificationUrl || 'https://ark-at-scale.space/api/webhook/notify' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-defaults",
+      "name": "Set Default Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [340, 460],
+      "notes": "🎯 CHANGE DEFAULT REPO HERE!\nDefault: https://github.com/hamza-baqa/banque-app"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'analyzer_started',\n  timestamp: new Date().toISOString(),\n  repositoryUrl: $json.repositoryUrl\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-analyzer-started",
+      "name": "Notify: Analyzer Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [560, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'code-analyzer',\n  input: {\n    repositoryUrl: $json.repositoryUrl,\n    repositoryPath: $json.repositoryPath\n  },\n  model: 'claude-sonnet-4-5'\n}) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "ark-code-analyzer",
+      "name": "ARK Agent: Code Analyzer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [780, 460],
+      "notes": "☁️ CLOUD: Uses real ARK API at ark-at-scale.space"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "success"
+            }
+          ]
+        }
+      },
+      "id": "check-analyzer-success",
+      "name": "Check Analyzer Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1000, 460]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'analyzer_completed',\n  timestamp: new Date().toISOString(),\n  result: $json.result\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-analyzer-completed",
+      "name": "Notify: Analyzer Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1220, 360]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'planner_started',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-planner-started",
+      "name": "Notify: Planner Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1440, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'migration-planner',\n  input: {\n    codeAnalysis: $('ARK Agent: Code Analyzer').item.json.result,\n    targetArchitecture: 'microservices',\n    targetFramework: 'spring-boot',\n    targetFrontend: 'angular'\n  },\n  model: 'claude-opus-4-6'\n}) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "ark-migration-planner",
+      "name": "ARK Agent: Migration Planner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1660, 360],
+      "notes": "☁️ CLOUD: Uses real ARK API at ark-at-scale.space"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'planner_completed',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-planner-completed",
+      "name": "Notify: Planner Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1880, 360]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'service_generator_started',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-service-started",
+      "name": "Notify: Service Generator Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2100, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'service-generator',\n  input: {\n    migrationPlan: $('ARK Agent: Migration Planner').item.json.result,\n    outputPath: $('Set Default Variables').item.json.outputPath\n  },\n  model: 'claude-sonnet-4-5'\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "generate-services",
+      "name": "ARK Agent: Service Generator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2320, 180],
+      "notes": "☁️ CLOUD: Uses real ARK service-generator agent"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'service_generator_completed',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-service-completed",
+      "name": "Notify: Service Generator Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2540, 180]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'frontend_migrator_started',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-frontend-started",
+      "name": "Notify: Frontend Migrator Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2100, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'frontend-migrator',\n  input: {\n    migrationPlan: $('ARK Agent: Migration Planner').item.json.result,\n    outputPath: $('Set Default Variables').item.json.outputPath\n  },\n  model: 'claude-sonnet-4-5'\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "generate-frontends",
+      "name": "ARK Agent: Frontend Migrator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2320, 360],
+      "notes": "☁️ CLOUD: Uses real ARK frontend-migrator agent"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'frontend_migrator_completed',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-frontend-completed",
+      "name": "Notify: Frontend Migrator Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2540, 360]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-results",
+      "name": "Merge Parallel Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [2760, 270]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'validator_started',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-validator-started",
+      "name": "Notify: Validator Started",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2980, 270]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ark-at-scale.space/ark-api/v1/agents/execute",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  namespace: 'banque-migration',\n  agent: 'quality-validator',\n  input: {\n    outputPath: $('Set Default Variables').item.json.outputPath,\n    sourcePath: $('Set Default Variables').item.json.repositoryPath,\n    migrationPlan: $('ARK Agent: Migration Planner').item.json.result\n  },\n  model: 'claude-sonnet-4-5'\n}) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "quality-validator",
+      "name": "ARK Agent: Quality Validator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [3200, 270],
+      "notes": "☁️ CLOUD: Uses real ARK quality-validator agent"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'migration_completed',\n  timestamp: new Date().toISOString(),\n  repositoryUrl: $('Set Default Variables').item.json.repositoryUrl,\n  outputPath: $('Set Default Variables').item.json.outputPath\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "notify-migration-completed",
+      "name": "Notify: Migration Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [3420, 270]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  repositoryUrl: $('Set Default Variables').item.json.repositoryUrl,\n  status: 'completed',\n  validationReport: $('ARK Agent: Quality Validator').item.json,\n  outputPath: $('Set Default Variables').item.json.outputPath,\n  downloadUrl: 'https://ark-at-scale.space/api/download',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3640, 270]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Set Default Variables').item.json.notificationUrl }}",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  step: 'error',\n  timestamp: new Date().toISOString(),\n  error: $json.error || 'Unknown error',\n  failedNode: $node.name\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "handle-error",
+      "name": "Handle Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [3640, 480]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{"node": "Set Default Variables", "type": "main", "index": 0}]]
+    },
+    "Set Default Variables": {
+      "main": [[{"node": "Notify: Analyzer Started", "type": "main", "index": 0}]]
+    },
+    "Notify: Analyzer Started": {
+      "main": [[{"node": "ARK Agent: Code Analyzer", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Code Analyzer": {
+      "main": [[{"node": "Check Analyzer Success", "type": "main", "index": 0}]]
+    },
+    "Check Analyzer Success": {
+      "main": [
+        [{"node": "Notify: Analyzer Completed", "type": "main", "index": 0}],
+        [{"node": "Handle Error", "type": "main", "index": 0}]
+      ]
+    },
+    "Notify: Analyzer Completed": {
+      "main": [[{"node": "Notify: Planner Started", "type": "main", "index": 0}]]
+    },
+    "Notify: Planner Started": {
+      "main": [[{"node": "ARK Agent: Migration Planner", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Migration Planner": {
+      "main": [[{"node": "Notify: Planner Completed", "type": "main", "index": 0}]]
+    },
+    "Notify: Planner Completed": {
+      "main": [
+        [
+          {"node": "Notify: Service Generator Started", "type": "main", "index": 0},
+          {"node": "Notify: Frontend Migrator Started", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Notify: Service Generator Started": {
+      "main": [[{"node": "ARK Agent: Service Generator", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Service Generator": {
+      "main": [[{"node": "Notify: Service Generator Completed", "type": "main", "index": 0}]]
+    },
+    "Notify: Service Generator Completed": {
+      "main": [[{"node": "Merge Parallel Results", "type": "main", "index": 0}]]
+    },
+    "Notify: Frontend Migrator Started": {
+      "main": [[{"node": "ARK Agent: Frontend Migrator", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Frontend Migrator": {
+      "main": [[{"node": "Notify: Frontend Migrator Completed", "type": "main", "index": 0}]]
+    },
+    "Notify: Frontend Migrator Completed": {
+      "main": [[{"node": "Merge Parallel Results", "type": "main", "index": 1}]]
+    },
+    "Merge Parallel Results": {
+      "main": [[{"node": "Notify: Validator Started", "type": "main", "index": 0}]]
+    },
+    "Notify: Validator Started": {
+      "main": [[{"node": "ARK Agent: Quality Validator", "type": "main", "index": 0}]]
+    },
+    "ARK Agent: Quality Validator": {
+      "main": [[{"node": "Notify: Migration Completed", "type": "main", "index": 0}]]
+    },
+    "Notify: Migration Completed": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "handle-error"
+  },
+  "staticData": null,
+  "tags": [
+    {"name": "migration", "id": "1"},
+    {"name": "ark-agents", "id": "2"},
+    {"name": "cloud-production", "id": "3"}
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2026-02-10T12:00:00.000Z",
+  "versionId": "3",
+  "meta": {
+    "instanceId": "ark-at-scale-platform-cloud"
+  }
+}

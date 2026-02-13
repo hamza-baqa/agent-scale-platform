@@ -46,3 +46,7 @@ temp/
 # Migration workspaces (temporary)
 platform/backend/workspace/
 platform/backend/output/
+
+# Runtime PID files
+.run-pids/
+minikube-linux-amd64

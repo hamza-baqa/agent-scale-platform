@@ -108,11 +108,11 @@ const startServer = async () => {
     await ensureDirectories();
 
     httpServer.listen(PORT, () => {
-      logger.info(`🚀 Server running on port ${PORT}`);
-      logger.info(`📊 API Documentation: http://localhost:${PORT}/api-docs`);
-      logger.info(`🔍 Health Check: http://localhost:${PORT}/health`);
-      logger.info(`🌐 Environment: ${process.env.NODE_ENV}`);
-      logger.info(`📡 WebSocket enabled`);
+      logger.info(`Server: Server running on port ${PORT}`);
+      logger.info(`Docs: API Documentation: http://localhost:${PORT}/api-docs`);
+      logger.info(`Health: Health Check: http://localhost:${PORT}/health`);
+      logger.info(`Environment: Environment: ${process.env.NODE_ENV}`);
+      logger.info(`WebSocket: WebSocket enabled`);
     });
 
     // Handle port already in use error

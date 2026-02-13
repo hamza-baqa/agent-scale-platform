@@ -1,0 +1,342 @@
+{
+  "name": "Agent@Scale Migration - Full Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "migration",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Migration Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 460],
+      "webhookId": "migration"
+    },
+    {
+      "parameters": {
+        "url": "=http://backend:4000/api/repo-migration",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  repositoryUrl: $json.body.repositoryUrl,\n  repositoryPath: $json.body.repositoryPath\n}) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "start-migration",
+      "name": "Start Migration",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 460],
+      "notes": "Calls backend to start the migration process"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.success }}",
+              "operation": "equals",
+              "value2": "true"
+            }
+          ]
+        }
+      },
+      "id": "check-started",
+      "name": "Check Migration Started",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 460]
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "amount": 5
+      },
+      "id": "wait-5s",
+      "name": "Wait 5 seconds",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [900, 360],
+      "notes": "Wait before checking status"
+    },
+    {
+      "parameters": {
+        "url": "=http://backend:4000/api/repo-migration/{{ $('Start Migration').item.json.migrationId }}/status",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "get-status",
+      "name": "Get Migration Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 360],
+      "notes": "Check current migration status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "check-completed",
+      "name": "Check if Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1340, 360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "equals",
+              "value2": "failed"
+            }
+          ]
+        }
+      },
+      "id": "check-failed",
+      "name": "Check if Failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1560, 260]
+    },
+    {
+      "parameters": {
+        "url": "=http://backend:4000/api/repo-migration/{{ $('Start Migration').item.json.migrationId }}/download",
+        "method": "GET",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-result",
+      "name": "Download Generated Code",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1560, 480],
+      "notes": "Download the generated microservices and micro-frontends"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "migrationId",
+              "value": "={{ $('Start Migration').item.json.migrationId }}"
+            },
+            {
+              "name": "status",
+              "value": "={{ $json.status }}"
+            },
+            {
+              "name": "message",
+              "value": "Migration completed successfully!"
+            },
+            {
+              "name": "outputPath",
+              "value": "={{ $json.outputPath }}"
+            },
+            {
+              "name": "downloadUrl",
+              "value": "=http://backend:4000/api/repo-migration/{{ $('Start Migration').item.json.migrationId }}/download"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-success",
+      "name": "Format Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1780, 480]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "migrationId",
+              "value": "={{ $('Start Migration').item.json.migrationId }}"
+            },
+            {
+              "name": "status",
+              "value": "failed"
+            },
+            {
+              "name": "message",
+              "value": "Migration failed"
+            },
+            {
+              "name": "error",
+              "value": "={{ $json.error || $json.currentStep || 'Unknown error' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-error",
+      "name": "Format Error Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1780, 160]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "success",
+              "value": "false"
+            },
+            {
+              "name": "error",
+              "value": "={{ $json.error || 'Failed to start migration' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-start-error",
+      "name": "Format Start Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [900, 560]
+    }
+  ],
+  "connections": {
+    "Migration Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Start Migration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Migration": {
+      "main": [
+        [
+          {
+            "node": "Check Migration Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Migration Started": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Start Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 seconds": {
+      "main": [
+        [
+          {
+            "node": "Get Migration Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Migration Status": {
+      "main": [
+        [
+          {
+            "node": "Check if Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Completed": {
+      "main": [
+        [
+          {
+            "node": "Download Generated Code",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check if Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Failed": {
+      "main": [
+        [
+          {
+            "node": "Format Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 5 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Generated Code": {
+      "main": [
+        [
+          {
+            "node": "Format Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-02-10T00:00:00.000Z",
+  "versionId": "1",
+  "meta": {
+    "instanceId": "ark-at-scale-platform"
+  }
+}

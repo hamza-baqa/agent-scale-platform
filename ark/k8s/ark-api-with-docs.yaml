@@ -1,0 +1,310 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ark-api-service
+  namespace: default
+data:
+  server.js: |
+    const http = require('http');
+    const https = require('https');
+    const fs = require('fs');
+    const path = require('path');
+
+    const PORT = 80;
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+    console.log('ARK API Server with Swagger Docs');
+    console.log('Port:', PORT);
+
+    // Swagger UI HTML
+    const swaggerHTML = `<!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>ARK API Documentation</title>
+      <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+      <style>
+        body { margin: 0; padding: 0; }
+      </style>
+    </head>
+    <body>
+      <div id="swagger-ui"></div>
+      <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+      <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+      <script>
+        window.onload = function() {
+          SwaggerUIBundle({
+            url: '/openapi.json',
+            dom_id: '#swagger-ui',
+            deepLinking: true,
+            presets: [
+              SwaggerUIBundle.presets.apis,
+              SwaggerUIStandalonePreset
+            ],
+            plugins: [
+              SwaggerUIBundle.plugins.DownloadUrl
+            ],
+            layout: "StandaloneLayout"
+          });
+        };
+      </script>
+    </body>
+    </html>`;
+
+    // OpenAPI Specification
+    const openApiSpec = {
+      openapi: '3.0.0',
+      info: {
+        title: 'ARK API',
+        version: '1.0.0',
+        description: 'Agent Runtime Kernel - AI Agent Orchestration API',
+        contact: {
+          name: 'ARK Support'
+        }
+      },
+      servers: [
+        { url: 'http://localhost:8080', description: 'Local Development' }
+      ],
+      paths: {
+        '/health': {
+          get: {
+            summary: 'Health Check',
+            description: 'Check if the ARK API service is running',
+            responses: {
+              '200': {
+                description: 'Service is healthy',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        status: { type: 'string', example: 'healthy' },
+                        service: { type: 'string', example: 'mock-ark' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        '/api/v1/agents/{namespace}/{agent}/invoke': {
+          post: {
+            summary: 'Invoke Agent',
+            description: 'Execute an ARK agent with provided input',
+            parameters: [
+              {
+                name: 'namespace',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Agent namespace (e.g., default, banque-migration)'
+              },
+              {
+                name: 'agent',
+                in: 'path',
+                required: true,
+                schema: { type: 'string' },
+                description: 'Agent name (e.g., code-analyzer, migration-planner)'
+              }
+            ],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      input: {
+                        type: 'string',
+                        description: 'Input prompt for the agent'
+                      },
+                      prompt: {
+                        type: 'string',
+                        description: 'Alternative field for input prompt'
+                      }
+                    }
+                  },
+                  examples: {
+                    'code-analyzer': {
+                      value: {
+                        input: 'Analyze the following Java code and extract entities...'
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            responses: {
+              '200': {
+                description: 'Agent execution successful',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        agent: { type: 'string' },
+                        namespace: { type: 'string' },
+                        output: { type: 'string' },
+                        status: { type: 'string' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    function callAnthropic(prompt, callback) {
+      if (!ANTHROPIC_API_KEY) {
+        callback({ error: 'ANTHROPIC_API_KEY not configured' });
+        return;
+      }
+
+      const data = JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const options = {
+        hostname: 'api.anthropic.com',
+        path: '/v1/messages',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try {
+            callback(null, JSON.parse(body));
+          } catch (e) {
+            callback({ error: 'Parse error' });
+          }
+        });
+      });
+
+      req.on('error', (e) => callback({ error: e.message }));
+      req.write(data);
+      req.end();
+    }
+
+    const server = http.createServer((req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        res.end();
+        return;
+      }
+
+      // Swagger UI
+      if (req.url === '/' || req.url === '/docs') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(swaggerHTML);
+        return;
+      }
+
+      // OpenAPI spec
+      if (req.url === '/openapi.json') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(openApiSpec, null, 2));
+        return;
+      }
+
+      // Health check
+      if (req.url === '/health' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'healthy', service: 'ark-api' }));
+        return;
+      }
+
+      // Agent invocation
+      const match = req.url.match(/^\/api\/v1\/agents\/([^\/]+)\/([^\/]+)\/invoke$/);
+      if (match && req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const payload = JSON.parse(body);
+            const prompt = payload.input || payload.prompt || '';
+
+            callAnthropic(prompt, (err, result) => {
+              if (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err }));
+              } else {
+                const output = result.content?.[0]?.text || JSON.stringify(result);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  agent: match[2],
+                  namespace: match[1],
+                  output: output,
+                  status: 'success'
+                }));
+              }
+            });
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON' }));
+          }
+        });
+        return;
+      }
+
+      res.writeHead(404);
+      res.end('Not Found');
+    });
+
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`✓ ARK API running on port ${PORT}`);
+      console.log(`✓ Swagger UI: http://localhost:${PORT}/docs`);
+      console.log(`✓ Health: http://localhost:${PORT}/health`);
+    });
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ark-api
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ark-api
+  template:
+    metadata:
+      labels:
+        app: ark-api
+    spec:
+      containers:
+      - name: ark-api
+        image: node:22-alpine
+        command: ["node", "/app/server.js"]
+        ports:
+        - containerPort: 80
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: anthropic-api-key
+              key: api-key
+              optional: true
+        volumeMounts:
+        - name: server-code
+          mountPath: /app
+      volumes:
+      - name: server-code
+        configMap:
+          name: ark-api-service

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import CodeDocumentationWithChat from '@/components/CodeDocumentationWithChat';
 
 // Test data
@@ -69,6 +70,8 @@ const testData = {
 };
 
 export default function TestChatPage() {
+  const [showSidebar, setShowSidebar] = useState(true);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="p-8">
@@ -76,15 +79,29 @@ export default function TestChatPage() {
           <h1 className="text-2xl font-bold text-yellow-900 mb-2">
             🧪 Chat Feature Test Page
           </h1>
-          <p className="text-yellow-800">
-            This page tests the chat feature independently. Look for the <strong>purple chat button with a pulsing green dot</strong> in the bottom-right corner.
+          <p className="text-yellow-800 mb-4">
+            This page tests the chat feature with close button functionality.
           </p>
+
+          {!showSidebar && (
+            <button
+              onClick={() => setShowSidebar(true)}
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:shadow-lg transition-all"
+            >
+              Show Chat Sidebar
+            </button>
+          )}
         </div>
 
-        <CodeDocumentationWithChat
-          data={testData}
-          migrationId="test-123"
-        />
+        {showSidebar && (
+          <div className="fixed right-0 top-0 h-screen w-96 z-50 shadow-2xl">
+            <CodeDocumentationWithChat
+              data={testData}
+              migrationId="test-123"
+              onClose={() => setShowSidebar(false)}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import mermaid from 'mermaid';
 interface MigrationPlanProps {
   planData: any;
   migrationId: string;
+  onClose?: () => void;
 }
 
 // Mermaid Diagram Component
@@ -53,7 +54,7 @@ function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
   if (error) {
     return (
       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-        <p className="text-sm text-yellow-800">⚠️ {error}</p>
+        <p className="text-sm text-yellow-800"><span className="font-semibold">Warning:</span> {error}</p>
       </div>
     );
   }
@@ -62,7 +63,7 @@ function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
 }
 
 // Chat Interface Component
-function PlanChatInterface({ planData, migrationId, onPlanUpdate }: { planData: any; migrationId: string; onPlanUpdate: (newPlan: any) => void }) {
+function PlanChatInterface({ planData, migrationId, onPlanUpdate, onClose }: { planData: any; migrationId: string; onPlanUpdate: (newPlan: any) => void; onClose?: () => void }) {
   const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([
     {
       role: 'assistant',
@@ -135,14 +136,31 @@ function PlanChatInterface({ planData, migrationId, onPlanUpdate }: { planData: 
     <div className="flex flex-col h-full bg-white rounded-2xl shadow-xl border border-gray-200">
       {/* Chat Header */}
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4 rounded-t-2xl">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-            <span className="text-2xl">🏗️</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">Architecture Planning Assistant</h3>
+              <p className="text-sm text-indigo-100">Adjust and optimize your migration plan</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-lg font-bold">Architecture Planning Assistant</h3>
-            <p className="text-sm text-indigo-100">Adjust and optimize your migration plan</p>
-          </div>
+
+          {/* Close Button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all hover:rotate-90 duration-200"
+              title="Close sidebar"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -219,7 +237,7 @@ function PlanChatInterface({ planData, migrationId, onPlanUpdate }: { planData: 
   );
 }
 
-export default function MigrationPlanWithChat({ planData, migrationId }: MigrationPlanProps) {
+export default function MigrationPlanWithChat({ planData, migrationId, onClose }: MigrationPlanProps) {
   const [showChat, setShowChat] = useState(false);
   const [currentPlan, setCurrentPlan] = useState(planData);
   const [planModified, setPlanModified] = useState(false);
@@ -331,7 +349,7 @@ export default function MigrationPlanWithChat({ planData, migrationId }: Migrati
       {/* Chat Panel */}
       {showChat && (
         <div className="fixed bottom-28 right-8 w-[450px] h-[700px] z-[9998] animate-fadeIn shadow-2xl">
-          <PlanChatInterface planData={currentPlan} migrationId={migrationId} onPlanUpdate={handlePlanUpdate} />
+          <PlanChatInterface planData={currentPlan} migrationId={migrationId} onPlanUpdate={handlePlanUpdate} onClose={onClose} />
         </div>
       )}
 

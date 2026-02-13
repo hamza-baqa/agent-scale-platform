@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ark-dashboard-content
+  namespace: default
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>ARK Dashboard</title>
+      <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+      <style>
+        body { margin: 0; padding: 0; }
+        .topbar { display: none; }
+      </style>
+    </head>
+    <body>
+      <div id="swagger-ui"></div>
+      <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+      <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+      <script>
+        window.onload = function() {
+          SwaggerUIBundle({
+            url: 'http://localhost:8080/openapi.json',
+            dom_id: '#swagger-ui',
+            deepLinking: true,
+            presets: [
+              SwaggerUIBundle.presets.apis,
+              SwaggerUIStandalonePreset
+            ],
+            plugins: [
+              SwaggerUIBundle.plugins.DownloadUrl
+            ],
+            layout: "StandaloneLayout"
+          });
+        };
+      </script>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ark-dashboard
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ark-dashboard
+  template:
+    metadata:
+      labels:
+        app: ark-dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: nginx:alpine
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: content
+          mountPath: /usr/share/nginx/html
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+      volumes:
+      - name: content
+        configMap:
+          name: ark-dashboard-content
+      - name: nginx-conf
+        configMap:
+          name: nginx-dashboard-conf
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-dashboard-conf
+  namespace: default
+data:
+  default.conf: |
+    server {
+        listen 3000;
+        server_name localhost;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }

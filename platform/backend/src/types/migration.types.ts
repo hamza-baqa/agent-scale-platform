@@ -1,5 +1,6 @@
 export interface MigrationRequest {
   repoUrl: string;
+  repoPath?: string;
   options?: MigrationOptions;
 }
 
@@ -20,8 +21,10 @@ export interface Migration {
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
+  pausedAt?: Date;
   error?: string;
   outputPath?: string;
+  validationReport?: any; // Can be FunctionalValidationReport
 }
 
 export type MigrationStatus =
@@ -31,6 +34,7 @@ export type MigrationStatus =
   | 'planning'
   | 'generating'
   | 'validating'
+  | 'paused'
   | 'completed'
   | 'failed';
 
@@ -48,7 +52,10 @@ export type AgentType =
   | 'migration-planner'
   | 'service-generator'
   | 'frontend-migrator'
-  | 'quality-validator';
+  | 'unit-test-validator'
+  | 'integration-test-validator'
+  | 'e2e-test-validator'
+  | 'container-deployer';
 
 export type AgentStatus =
   | 'pending'
