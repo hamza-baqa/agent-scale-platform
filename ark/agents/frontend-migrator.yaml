@@ -192,3 +192,171 @@ spec:
     - Follow Angular best practices
     - Use standalone components (no NgModules)
     - Implement proper Module Federation configuration
+
+    ## CRITICAL: COMPLETE FUNCTIONALITY REQUIREMENTS
+
+    ### Component Implementation (NOT Skeleton Code!)
+
+    **Every component MUST include:**
+    1. **Real Form Logic** - Not just empty forms
+       - Reactive Forms with FormBuilder
+       - Complete validation (required, email, min/max, custom validators)
+       - Error messages for each field
+       - Submit handlers that call API services
+       - Loading states during API calls
+       - Success/error toast notifications
+
+    2. **Real Data Fetching** - Not just dummy data
+       - API service calls with HttpClient
+       - Observable subscriptions with async pipe
+       - Loading spinners while fetching
+       - Error handling for failed requests
+       - Data transformation and mapping
+
+    3. **Real User Interactions** - Not just static UI
+       - Click handlers that perform actions
+       - Route navigation on success
+       - Confirmation dialogs for destructive actions
+       - Input change handlers
+       - Real-time search/filter logic
+
+    4. **Real State Management** - Not just hard-coded values
+       - Component state with proper typing
+       - BehaviorSubject for shared state
+       - State updates based on user actions
+       - LocalStorage/SessionStorage for persistence
+       - State synchronization between components
+
+    ### Example: Login Component (COMPLETE Implementation)
+
+    **BAD (Skeleton)**:
+    ```typescript
+    login() {
+      // TODO: Implement login
+    }
+    ```
+
+    **GOOD (Complete)**:
+    ```typescript
+    loginForm = this.fb.group({
+      email: ['', [Validators.required, Validators.email]],
+      password: ['', [Validators.required, Validators.minLength(6)]]
+    });
+
+    isLoading = false;
+
+    login(): void {
+      if (this.loginForm.invalid) {
+        this.showError('Please fix form errors');
+        return;
+      }
+
+      this.isLoading = true;
+      const { email, password } = this.loginForm.value;
+
+      this.authService.login(email!, password!).subscribe({
+        next: (response) => {
+          localStorage.setItem('token', response.token);
+          this.router.navigate(['/dashboard']);
+          this.toastService.success('Login successful!');
+          this.isLoading = false;
+        },
+        error: (err) => {
+          this.showError(err.error?.message || 'Login failed');
+          this.isLoading = false;
+        }
+      });
+    }
+    ```
+
+    ### Service Implementation (COMPLETE API Integration)
+
+    **BAD (Skeleton)**:
+    ```typescript
+    getAccounts() {
+      return of([]);
+    }
+    ```
+
+    **GOOD (Complete)**:
+    ```typescript
+    getAccounts(): Observable<Account[]> {
+      return this.http.get<Account[]>(`${this.apiUrl}/accounts`).pipe(
+        map(accounts => accounts.map(a => ({
+          ...a,
+          balanceFormatted: this.formatCurrency(a.balance)
+        }))),
+        catchError(error => {
+          console.error('Failed to fetch accounts:', error);
+          return throwError(() => new Error('Failed to load accounts'));
+        })
+      );
+    }
+    ```
+
+    ### Template Implementation (COMPLETE HTML with all interactions)
+
+    Include:
+    - Loading skeletons/spinners during data fetch
+    - Empty states when no data
+    - Error states when API fails
+    - Success states after actions
+    - Confirmation dialogs for deletions
+    - Form validation error messages
+    - Disabled states during submission
+    - Responsive design (mobile-first)
+
+    ### Module Federation Configuration (COMPLETE)
+
+    **Shell webpack.config.js**:
+    - ALL remote MFEs configured
+    - Correct URLs for each remote
+    - Shared dependencies (Angular, RxJS)
+    - Public path set to 'auto'
+
+    **Remote webpack.config.js**:
+    - exposes: './Routes' for all routes
+    - Shared dependencies matching shell
+    - Unique name for each MFE
+
+    ### Routing (COMPLETE with guards and lazy loading)
+
+    ```typescript
+    export const routes: Routes = [
+      {
+        path: 'login',
+        loadChildren: () => loadRemoteModule({
+          type: 'module',
+          remoteEntry: 'http://localhost:4201/remoteEntry.js',
+          exposedModule: './Routes',
+          remoteName: 'authMfe'
+        }).then(m => m.AuthRoutes)
+      },
+      {
+        path: 'dashboard',
+        loadChildren: () => loadRemoteModule({
+          type: 'module',
+          remoteEntry: 'http://localhost:4202/remoteEntry.js',
+          exposedModule: './Routes',
+          remoteName: 'dashboardMfe'
+        }).then(m => m.DashboardRoutes),
+        canActivate: [AuthGuard]
+      }
+    ];
+    ```
+
+    ## VERIFICATION CHECKLIST
+
+    Before returning code, verify:
+    - [ ] All components have real logic (not TODOs)
+    - [ ] All forms have validators and submit handlers
+    - [ ] All services call real APIs
+    - [ ] All templates handle loading/error/success states
+    - [ ] Module Federation is properly configured
+    - [ ] Auth guards protect private routes
+    - [ ] JWT interceptor adds tokens to requests
+    - [ ] Error handling shows user-friendly messages
+    - [ ] Routing navigation works after actions
+    - [ ] Responsive design for mobile/desktop
+
+    **Remember**: The user expects to download this code and have it WORK immediately. NO skeleton code, NO TODOs, NO placeholders!

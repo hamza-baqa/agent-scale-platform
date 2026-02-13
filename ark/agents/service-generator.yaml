@@ -261,3 +261,107 @@ spec:
     ```
 
     **IMPORTANT:** Generate COMPLETE, PRODUCTION-READY code. Every file must be fully functional and compilable. Include all imports, proper error handling, and Spring Boot best practices.
+
+    ## CRITICAL: COMPLETE IMPLEMENTATION REQUIREMENTS
+
+    ### Service Layer (COMPLETE Business Logic)
+
+    **BAD (Skeleton)**:
+    ```java
+    public Account createAccount(Account account) {
+        // TODO: Add validation
+        return repository.save(account);
+    }
+    ```
+
+    **GOOD (Complete)**:
+    ```java
+    @Transactional
+    public Account createAccount(AccountDTO accountDTO) {
+        // Validation
+        if (accountDTO.getBalance().compareTo(BigDecimal.ZERO) < 0) {
+            throw new ValidationException("Initial balance cannot be negative");
+        }
+
+        // Check if account number already exists
+        if (repository.existsByAccountNumber(accountDTO.getAccountNumber())) {
+            throw new DuplicateAccountException("Account number already exists");
+        }
+
+        // Map DTO to Entity
+        Account account = mapper.toEntity(accountDTO);
+        account.setStatus(AccountStatus.ACTIVE);
+        account.setCreatedAt(LocalDateTime.now());
+
+        // Generate account number if not provided
+        if (account.getAccountNumber() == null) {
+            account.setAccountNumber(generateAccountNumber());
+        }
+
+        // Save to database
+        Account saved = repository.save(account);
+
+        // Publish account created event
+        eventPublisher.publishAccountCreated(saved);
+
+        logger.info("Account created successfully: {}", saved.getId());
+        return saved;
+    }
+    ```
+
+    ### Controller Layer (COMPLETE with proper HTTP responses)
+
+    Include:
+    - Proper HTTP status codes (200, 201, 400, 404, 500)
+    - Request/Response DTOs (not entities!)
+    - Validation with @Valid
+    - Exception handling
+    - Pagination for list endpoints
+    - OpenAPI documentation
+    - HATEOAS links (optional but good)
+
+    ### Repository Layer (COMPLETE with custom queries)
+
+    Include:
+    - Standard CRUD methods
+    - Custom query methods (@Query)
+    - Named queries for complex operations
+    - Projections for optimized queries
+    - Specifications for dynamic queries
+
+    ### Security Implementation (COMPLETE)
+
+    - JWT token generation and validation
+    - Password encoding with BCrypt
+    - @PreAuthorize annotations on methods
+    - Security filter chain configuration
+    - CORS configuration
+    - CSRF protection (disabled for APIs)
+
+    ### Exception Handling (COMPLETE)
+
+    - Custom exception classes
+    - @ControllerAdvice global handler
+    - Proper error response format
+    - HTTP status code mapping
+    - Error logging
+
+    ### Configuration (COMPLETE application.yml)
+
+    Include:
+    - Server port configuration
+    - Database connection settings
+    - JPA/Hibernate settings
+    - Logging configuration
+    - Actuator endpoints
+    - Security settings
+    - CORS settings
+
+    ### Tests (COMPLETE coverage)
+
+    - Unit tests for services (@SpringBootTest, Mockito)
+    - Integration tests for repositories (@DataJpaTest)
+    - Controller tests (MockMvc)
+    - Minimum 70% coverage
+
+    **Remember**: Generate code that compiles and runs immediately. NO TODOs, NO placeholders!

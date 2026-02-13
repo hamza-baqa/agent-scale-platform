@@ -1151,6 +1151,42 @@ logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE`,
     emitAgentCompleted(migrationId, 'migration-planner', plannerOutput);
     logger.info('✅ [MIGRATION PLANNER] Complete');
 
+    // ==========================================
+    // STEP: Business Logic Analysis
+    // ==========================================
+    logger.info('🔍 [BUSINESS LOGIC ANALYZER] Analyzing business logic from source code...');
+    emitAgentLog(migrationId, 'migration-planner', 'info', '🔍 Performing deep business logic analysis');
+
+    let businessLogicAnalysis;
+    let businessLogicPrompt = '';
+
+    try {
+      const businessLogicAnalyzer = require('../services/businessLogicAnalyzer').default;
+      businessLogicAnalysis = await businessLogicAnalyzer.analyzeBusinessLogic(actualRepoPath);
+
+      logger.info('✅ Business logic analysis complete', {
+        validations: businessLogicAnalysis.validations.length,
+        calculations: businessLogicAnalysis.calculations.length,
+        workflows: businessLogicAnalysis.workflows.length,
+        businessRules: businessLogicAnalysis.businessRules.length,
+        complexityScore: businessLogicAnalysis.summary.complexityScore
+      });
+
+      // Format for agent prompts
+      businessLogicPrompt = businessLogicAnalyzer.formatForAgentPrompt(businessLogicAnalysis);
+
+      emitAgentLog(migrationId, 'migration-planner', 'info', `✅ Extracted ${businessLogicAnalysis.validations.length} validations, ${businessLogicAnalysis.calculations.length} calculations, ${businessLogicAnalysis.workflows.length} workflows`);
+
+      // Store for later use
+      (migration as any).businessLogicAnalysis = businessLogicAnalysis;
+
+    } catch (bizLogicError: any) {
+      logger.warn('Business logic analysis had issues, continuing with basic analysis', {
+        error: bizLogicError.message
+      });
+      emitAgentLog(migrationId, 'migration-planner', 'warn', '⚠️ Business logic analysis incomplete, using basic patterns');
+    }
+
     // Setup workspace
     const workspaceDir = path.join(process.cwd(), 'workspace', migrationId, 'output');
     await fs.ensureDir(path.join(workspaceDir, 'microservices'));
@@ -1169,8 +1205,12 @@ logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE`,
     const outputDir = path.join(workspaceDir, 'output');
     await fs.ensureDir(outputDir);
 
-    // Call ARK service-generator agent
-    const serviceGenResult = await arkChatService.generateServicesWithARK(migrationPlan, actualRepoPath);
+    // Call ARK service-generator agent (with business logic)
+    const serviceGenResult = await arkChatService.generateServicesWithARK(
+      migrationPlan,
+      actualRepoPath,
+      businessLogicPrompt
+    );
 
     let serviceGenRawOutput: string | undefined;
 
@@ -1204,8 +1244,12 @@ logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE`,
       microFrontends: migrationPlan.microFrontends?.length || 0
     });
 
-    // Call ARK frontend-migrator agent
-    const frontendGenResult = await arkChatService.generateFrontendsWithARK(migrationPlan, actualRepoPath);
+    // Call ARK frontend-migrator agent (with business logic)
+    const frontendGenResult = await arkChatService.generateFrontendsWithARK(
+      migrationPlan,
+      actualRepoPath,
+      businessLogicPrompt
+    );
 
     let frontendGenRawOutput: string | undefined;
 
@@ -1673,8 +1717,16 @@ ${error.stack || 'No stack trace available'}
       logger.info('📦 [CODE GENERATION] Extracting Angular micro-frontends from ARK...');
       emitAgentLog(migrationId, 'e2e-test-validator', 'info', '🎨 Extracting Angular micro-frontends with REAL components');
 
-      const mfeNames = arkCodeExtractor.parseMfes(frontendSpecs);
-      logger.info(`Found ${mfeNames.length} micro-frontends in ARK output: ${mfeNames.join(', ')}`);
+      // Use migration plan MFE names instead of parsing markdown (more reliable)
+      const mfeNames = migrationPlan.microFrontends?.map((mfe: any) => mfe.name) || [];
+
+      // Fallback: try parsing if migration plan is empty
+      if (mfeNames.length === 0) {
+        logger.warn('No MFEs in migration plan, trying to parse from ARK output');
+        mfeNames.push(...arkCodeExtractor.parseMfes(frontendSpecs));
+      }
+
+      logger.info(`Found ${mfeNames.length} micro-frontends to extract: ${mfeNames.join(', ')}`);
 
       let totalFrontendFiles = 0;
       for (const mfeName of mfeNames) {

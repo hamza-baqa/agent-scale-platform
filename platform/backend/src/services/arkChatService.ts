@@ -1277,7 +1277,8 @@ class ArkChatService {
    */
   async generateServicesWithARK(
     migrationPlan: any,
-    repoPath: string
+    repoPath: string,
+    businessLogicPrompt?: string
   ): Promise<{
     success: boolean;
     generatedCode?: any;
@@ -1288,12 +1289,19 @@ class ArkChatService {
       logger.info('Starting ARK-powered service generation', {
         repoPath,
         agent: 'service-generator',
-        microservices: migrationPlan.microservices?.length || 0
+        microservices: migrationPlan.microservices?.length || 0,
+        hasBusinessLogic: !!businessLogicPrompt
       });
 
       // Build comprehensive prompt for service-generator
       let userMessage = `**MICROSERVICES CODE GENERATION REQUEST**\n\n`;
       userMessage += `**Repository Path:** ${repoPath}\n\n`;
+
+      // Add business logic requirements if available
+      if (businessLogicPrompt) {
+        userMessage += businessLogicPrompt;
+        userMessage += `\n\n`;
+      }
 
       // Add migration plan details
       userMessage += `## MIGRATION PLAN\n\n`;
@@ -1390,7 +1398,8 @@ class ArkChatService {
    */
   async generateFrontendsWithARK(
     migrationPlan: any,
-    repoPath: string
+    repoPath: string,
+    businessLogicPrompt?: string
   ): Promise<{
     success: boolean;
     generatedCode?: any;
@@ -1401,12 +1410,19 @@ class ArkChatService {
       logger.info('Starting ARK-powered frontend generation', {
         repoPath,
         agent: 'frontend-migrator',
-        microFrontends: migrationPlan.microFrontends?.length || 0
+        microFrontends: migrationPlan.microFrontends?.length || 0,
+        hasBusinessLogic: !!businessLogicPrompt
       });
 
       // Build comprehensive prompt for frontend-migrator
       let userMessage = `**MICRO-FRONTENDS CODE GENERATION REQUEST**\n\n`;
       userMessage += `**Repository Path:** ${repoPath}\n\n`;
+
+      // Add business logic requirements if available
+      if (businessLogicPrompt) {
+        userMessage += businessLogicPrompt;
+        userMessage += `\n\n`;
+      }
 
       // Add migration plan details
       userMessage += `## MIGRATION PLAN\n\n`;

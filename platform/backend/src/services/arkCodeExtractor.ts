@@ -189,14 +189,48 @@ export class ArkCodeExtractor {
   parseMfes(arkOutput: string): string[] {
     const mfeNames: string[] = [];
 
-    // Match patterns like:
-    // ### 1. shell-mfe
-    // ## auth-mfe
-    const headerPattern = /##+ (?:\d+\.\s+)?([a-z]+-(?:mfe|shell))/gi;
+    // Pattern 1: Explicit mfe/shell/app names (e.g., "## shell-app", "## auth-mfe")
+    const pattern1 = /##+ (?:\d+\.\s+)?([a-z]+-(?:mfe|shell|app))/gi;
+
+    // Pattern 2: "Shell Application" → "shell-app"
+    const pattern2 = /##+ (?:\d+\.\s+)?Shell Application/gi;
+
+    // Pattern 3: "Auth MFE" → "auth-mfe"
+    const pattern3 = /##+ (?:\d+\.\s+)?(\w+)\s+MFE/gi;
+
+    // Pattern 4: "Dashboard Micro-Frontend" → "dashboard-mfe"
+    const pattern4 = /##+ (?:\d+\.\s+)?(\w+)\s+Micro-?Frontend/gi;
 
     let match;
-    while ((match = headerPattern.exec(arkOutput)) !== null) {
+
+    // Try Pattern 1
+    while ((match = pattern1.exec(arkOutput)) !== null) {
       const mfeName = match[1].toLowerCase();
+      if (!mfeNames.includes(mfeName)) {
+        mfeNames.push(mfeName);
+      }
+    }
+
+    // Try Pattern 2
+    if (arkOutput.match(pattern2)) {
+      if (!mfeNames.includes('shell-app')) {
+        mfeNames.push('shell-app');
+      }
+    }
+
+    // Try Pattern 3
+    pattern3.lastIndex = 0;
+    while ((match = pattern3.exec(arkOutput)) !== null) {
+      const mfeName = `${match[1].toLowerCase()}-mfe`;
+      if (!mfeNames.includes(mfeName)) {
+        mfeNames.push(mfeName);
+      }
+    }
+
+    // Try Pattern 4
+    pattern4.lastIndex = 0;
+    while ((match = pattern4.exec(arkOutput)) !== null) {
+      const mfeName = `${match[1].toLowerCase()}-mfe`;
       if (!mfeNames.includes(mfeName)) {
         mfeNames.push(mfeName);
       }
