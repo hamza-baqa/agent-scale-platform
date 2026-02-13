@@ -1719,7 +1719,7 @@ ${error.stack || 'No stack trace available'}
       for (const serviceName of serviceNames) {
         const result = await arkCodeExtractor.extractMicroservice(
           serviceSpecs,
-          path.join(outputDir, 'microservices'),
+          path.join(outputDir, 'backend'),
           serviceName
         );
 
@@ -1757,7 +1757,7 @@ ${error.stack || 'No stack trace available'}
       for (const mfeName of mfeNames) {
         const result = await arkCodeExtractor.extractMicroFrontend(
           frontendSpecs,
-          path.join(outputDir, 'micro-frontends'),
+          path.join(outputDir, 'frontend'),
           mfeName
         );
 
@@ -2381,8 +2381,8 @@ router.post('/deploy/:id', async (req, res) => {
     }
 
     // Get the list of generated services and micro-frontends
-    const microservicesDir = path.join(workspaceDir, 'microservices');
-    const microFrontendsDir = path.join(workspaceDir, 'micro-frontends');
+    const microservicesDir = path.join(workspaceDir, 'backend');
+    const microFrontendsDir = path.join(workspaceDir, 'frontend');
 
     const services = await fs.readdir(microservicesDir);
     const microFrontends = await fs.readdir(microFrontendsDir);
@@ -2772,7 +2772,7 @@ export async function generateCodeOnDemand(migrationId: string, migration: any):
     for (const serviceName of serviceNames) {
       const result = await arkCodeExtractor.extractMicroservice(
         serviceGenRawOutput,
-        path.join(outputDir, 'microservices'),
+        path.join(outputDir, 'backend'),
         serviceName
       );
       totalServiceFiles += result.filesWritten;
@@ -2790,7 +2790,7 @@ export async function generateCodeOnDemand(migrationId: string, migration: any):
     for (const mfeName of mfeNames) {
       const result = await arkCodeExtractor.extractMicroFrontend(
         frontendGenRawOutput,
-        path.join(outputDir, 'micro-frontends'),
+        path.join(outputDir, 'frontend'),
         mfeName
       );
       totalFrontendFiles += result.filesWritten;

@@ -121,7 +121,7 @@ export class DockerComposeGenerator {
 
       compose.services[service.name] = {
         build: {
-          context: `./${service.name}`,
+          context: `./backend/${service.name}`,
           dockerfile: 'Dockerfile'
         },
         container_name: service.name,
@@ -187,7 +187,7 @@ export class DockerComposeGenerator {
     config.microFrontends.forEach(mfe => {
       compose.services[mfe.name] = {
         build: {
-          context: `./${mfe.name}`,
+          context: `./frontend/${mfe.name}`,
           dockerfile: 'Dockerfile'
         },
         container_name: mfe.name,
