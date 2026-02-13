@@ -210,45 +210,63 @@ router.get('/:id/file', async (req, res, next) => {
 /**
  * GET /api/migrations/:id/download
  * Download migration output as ZIP
- * ONLY if Quality Validator approved the code
+ * Generates code on-demand if not already generated
  */
 router.get('/:id/download', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { force } = req.query; // Allow force download with ?force=true
 
-    // Get migration to check if code is downloadable
+    // Get migration
     const migration = migrationService.getMigration(id);
 
     if (!migration) {
       return res.status(404).json({ error: 'Migration not found' });
     }
 
-    // Check if code passed quality validation (unless force=true)
-    const codeDownloadable = (migration as any).codeDownloadable;
-    const downloadBlockedReason = (migration as any).downloadBlockedReason;
-
-    if (codeDownloadable === false && force !== 'true') {
-      return res.status(403).json({
-        error: 'Code download blocked',
-        reason: downloadBlockedReason || 'Quality validation failed',
-        message: 'Generated code does not meet quality standards. Fix issues and retry validation.',
-        hint: 'Add ?force=true to download anyway (for testing/inspection)'
+    // Check if migration is completed (analysis + planning done)
+    if (migration.status !== 'completed' && migration.status !== 'validated') {
+      return res.status(400).json({
+        error: 'Migration not ready',
+        message: 'Please wait for migration analysis to complete before downloading code'
       });
     }
 
-    const downloadPath = migrationService.getDownloadPath(id);
+    // Check if code has already been generated
+    let downloadPath = migrationService.getDownloadPath(id);
 
     if (!downloadPath) {
-      return res.status(404).json({ error: 'Migration output not found' });
+      // Code not generated yet - generate it now!
+      logger.info(`📦 [ON-DEMAND] Generating code for migration ${id}...`);
+
+      try {
+        // Import the code generation function
+        const { generateCodeOnDemand } = require('./repoMigrationRoutes');
+
+        // Generate code (this will create microservices + micro-frontends + infrastructure)
+        await generateCodeOnDemand(id, migration);
+
+        // Get download path after generation
+        downloadPath = migrationService.getDownloadPath(id);
+
+        if (!downloadPath) {
+          throw new Error('Code generation completed but output file not found');
+        }
+
+        logger.info(`✅ [ON-DEMAND] Code generated successfully for ${id}`);
+      } catch (genError: any) {
+        logger.error(`❌ [ON-DEMAND] Code generation failed for ${id}:`, genError);
+        return res.status(500).json({
+          error: 'Code generation failed',
+          message: genError.message,
+          details: 'Please check migration logs for more information'
+        });
+      }
     }
 
-    // Log if force download was used
-    if (force === 'true') {
-      logger.warn(`⚠️ Force download used for migration ${id} (validation failed)`);
-    }
-
+    // Download the ZIP file
+    logger.info(`📥 Downloading migration ${id}: ${downloadPath}`);
     res.download(downloadPath, `migration-${id}.zip`);
+
   } catch (error) {
     next(error);
   }

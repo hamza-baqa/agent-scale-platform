@@ -2711,4 +2711,154 @@ router.post('/:id/restart', async (req, res) => {
   }
 });
 
+/**
+ * Generate code on-demand when user clicks "Download Code"
+ * This function is called from the download endpoint
+ */
+export async function generateCodeOnDemand(migrationId: string, migration: any): Promise<void> {
+  logger.info(`🚀 [ON-DEMAND] Starting code generation for ${migrationId}`);
+
+  try {
+    // Get migration data
+    const migrationPlan = JSON.parse((migration as any).plannerOutput || '{}');
+    const actualRepoPath = migration.repoPath;
+    const businessLogicPrompt = (migration as any).businessLogicAnalysis
+      ? require('../services/businessLogicAnalyzer').default.formatForAgentPrompt((migration as any).businessLogicAnalysis)
+      : '';
+
+    const workspaceDir = path.join(process.cwd(), 'workspace', migrationId, 'output');
+    await fs.ensureDir(workspaceDir);
+    const outputDir = workspaceDir;
+
+    // Step 1: Generate Backend (Spring Boot Microservices)
+    logger.info(`⚙️ [ON-DEMAND] Generating Spring Boot microservices...`);
+    const serviceGenResult = await arkChatService.generateServicesWithARK(
+      migrationPlan,
+      actualRepoPath,
+      businessLogicPrompt
+    );
+
+    if (!serviceGenResult.success) {
+      throw new Error(`Backend generation failed: ${serviceGenResult.error}`);
+    }
+
+    const serviceGenRawOutput = serviceGenResult.rawOutput;
+    logger.info(`✅ Backend code generated (${serviceGenRawOutput?.length || 0} chars)`);
+
+    // Step 2: Generate Frontend (Angular Micro-Frontends)
+    logger.info(`🎨 [ON-DEMAND] Generating Angular micro-frontends...`);
+    const frontendGenResult = await arkChatService.generateFrontendsWithARK(
+      migrationPlan,
+      actualRepoPath,
+      businessLogicPrompt
+    );
+
+    if (!frontendGenResult.success) {
+      throw new Error(`Frontend generation failed: ${frontendGenResult.error}`);
+    }
+
+    const frontendGenRawOutput = frontendGenResult.rawOutput;
+    logger.info(`✅ Frontend code generated (${frontendGenRawOutput?.length || 0} chars)`);
+
+    // Step 3: Extract code from ARK markdown output
+    logger.info(`📦 [ON-DEMAND] Extracting code from ARK specifications...`);
+    const arkCodeExtractor = require('../services/arkCodeExtractor').default;
+
+    // Extract microservices
+    const serviceNames = arkCodeExtractor.parseServiceNames(serviceGenRawOutput);
+    logger.info(`Found ${serviceNames.length} microservices: ${serviceNames.join(', ')}`);
+
+    let totalServiceFiles = 0;
+    for (const serviceName of serviceNames) {
+      const result = await arkCodeExtractor.extractMicroservice(
+        serviceGenRawOutput,
+        path.join(outputDir, 'microservices'),
+        serviceName
+      );
+      totalServiceFiles += result.filesWritten;
+      logger.info(`✅ Extracted ${serviceName}: ${result.filesWritten} files`);
+    }
+
+    // Extract micro-frontends
+    const mfeNames = migrationPlan.microFrontends?.map((mfe: any) => mfe.name) || [];
+    if (mfeNames.length === 0) {
+      mfeNames.push(...arkCodeExtractor.parseMfes(frontendGenRawOutput));
+    }
+    logger.info(`Found ${mfeNames.length} micro-frontends: ${mfeNames.join(', ')}`);
+
+    let totalFrontendFiles = 0;
+    for (const mfeName of mfeNames) {
+      const result = await arkCodeExtractor.extractMicroFrontend(
+        frontendGenRawOutput,
+        path.join(outputDir, 'micro-frontends'),
+        mfeName
+      );
+      totalFrontendFiles += result.filesWritten;
+      logger.info(`✅ Extracted ${mfeName}: ${result.filesWritten} files`);
+    }
+
+    const totalFiles = totalServiceFiles + totalFrontendFiles;
+    logger.info(`🎉 Code extraction complete: ${totalFiles} files`);
+
+    if (totalFiles === 0) {
+      throw new Error('No files were generated! Check ARK agent output format.');
+    }
+
+    // Clean up empty directories
+    await cleanupEmptyDirectories(outputDir);
+
+    // Step 4: Generate infrastructure files
+    logger.info(`📦 [ON-DEMAND] Generating infrastructure files...`);
+    const dockerComposeGenerator = require('../services/dockerComposeGenerator').default;
+    const readmeGenerator = require('../services/readmeGenerator').default;
+
+    const services = migrationPlan.microservices.map((ms: any, idx: number) => ({
+      name: ms.name,
+      port: ms.port || (8081 + idx),
+      database: ms.database || `${ms.name.replace('-service', '')}_db`
+    }));
+
+    const microFrontends = migrationPlan.microFrontends.map((mfe: any, idx: number) => ({
+      name: mfe.name,
+      port: mfe.port || (4200 + idx)
+    }));
+
+    await dockerComposeGenerator.generateDockerCompose(outputDir, {
+      services,
+      microFrontends,
+      includeRedis: true,
+      includeRabbitMQ: true,
+      includeApiGateway: true
+    });
+
+    await dockerComposeGenerator.generateStartupScript(outputDir);
+    await dockerComposeGenerator.generateStopScript(outputDir);
+
+    await readmeGenerator.generateReadme(outputDir, {
+      name: 'Banking Application - Microservices',
+      description: 'Complete banking application with microservices and micro-frontends',
+      services,
+      microFrontends,
+      databases: services.map((s: any) => s.database),
+      hasRedis: true,
+      hasRabbitMQ: true,
+      hasApiGateway: true
+    });
+
+    logger.info(`✅ Infrastructure files generated`);
+
+    // Step 5: Create ZIP archive
+    logger.info(`📦 [ON-DEMAND] Creating ZIP archive...`);
+    const outputPath = await migrationService.createOutputArchive(migrationId);
+    (migration as any).outputPath = outputPath;
+    logger.info(`✅ ZIP created: ${outputPath}`);
+
+    logger.info(`🎉 [ON-DEMAND] Code generation complete for ${migrationId}!`);
+
+  } catch (error: any) {
+    logger.error(`❌ [ON-DEMAND] Code generation failed for ${migrationId}:`, error);
+    throw error;
+  }
+}
+
 export default router;
