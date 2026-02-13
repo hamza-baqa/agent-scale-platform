@@ -34,7 +34,16 @@ export class ArkCodeExtractor {
 
       for (const block of codeBlocks) {
         try {
-          const fullPath = path.join(basePath, serviceOrMfeName, block.filepath);
+          // Check if filepath already includes service/MFE name to avoid duplication
+          // e.g., "auth-service/pom.xml" should not become "auth-service/auth-service/pom.xml"
+          let fullPath: string;
+          if (block.filepath.startsWith(serviceOrMfeName + '/')) {
+            // Filepath already has service name prefix
+            fullPath = path.join(basePath, block.filepath);
+          } else {
+            // Filepath is relative, add service name
+            fullPath = path.join(basePath, serviceOrMfeName, block.filepath);
+          }
 
           // Ensure directory exists
           await fs.ensureDir(path.dirname(fullPath));

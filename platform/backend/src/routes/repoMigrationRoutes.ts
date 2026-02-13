@@ -33,6 +33,32 @@ function isGitUrl(input: string): boolean {
 }
 
 /**
+ * Recursively remove empty directories
+ */
+async function cleanupEmptyDirectories(dirPath: string): Promise<void> {
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+
+    // Recursively check subdirectories first
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const subDirPath = path.join(dirPath, entry.name);
+        await cleanupEmptyDirectories(subDirPath);
+      }
+    }
+
+    // Check if directory is now empty
+    const remainingEntries = await fs.readdir(dirPath);
+    if (remainingEntries.length === 0) {
+      await fs.remove(dirPath);
+      logger.info(`🧹 Removed empty directory: ${dirPath}`);
+    }
+  } catch (error: any) {
+    logger.warn(`Failed to cleanup directory ${dirPath}:`, error.message);
+  }
+}
+
+/**
  * AI analyzes validation errors and suggests fixes
  */
 async function analyzeValidationErrors(errors: string[], migrationPlan: any, analysis: any): Promise<string> {
@@ -1187,10 +1213,9 @@ logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE`,
       emitAgentLog(migrationId, 'migration-planner', 'warn', '⚠️ Business logic analysis incomplete, using basic patterns');
     }
 
-    // Setup workspace
+    // Setup workspace (don't create subdirectories yet - let code extractor create them on-demand to avoid empty folders)
     const workspaceDir = path.join(process.cwd(), 'workspace', migrationId, 'output');
-    await fs.ensureDir(path.join(workspaceDir, 'microservices'));
-    await fs.ensureDir(path.join(workspaceDir, 'micro-frontends'));
+    await fs.ensureDir(workspaceDir);
 
     // Step 3: Service Generator - Generate Spring Boot microservices using ARK
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -1754,6 +1779,28 @@ ${error.stack || 'No stack trace available'}
       const totalFiles = totalServiceFiles + totalFrontendFiles;
       logger.info(`🎉 [CODE GENERATION] COMPLETE: ${totalFiles} files extracted from ARK specifications`);
       emitAgentLog(migrationId, 'e2e-test-validator', 'info', `🎉 Code generation complete: ${totalFiles} production-ready files!`);
+
+      // Validate that code was actually generated
+      if (totalFiles === 0) {
+        logger.error('❌ [CODE GENERATION] NO files were generated! ARK agents may have returned empty or incorrectly formatted output.');
+        emitAgentLog(migrationId, 'e2e-test-validator', 'error', '❌ CRITICAL: No code files were generated!');
+        throw new Error('Code generation failed: 0 files extracted from ARK output. Check agent prompts and ARK response format.');
+      }
+
+      if (totalServiceFiles === 0) {
+        logger.warn('⚠️ [CODE GENERATION] NO backend microservices were generated!');
+        emitAgentLog(migrationId, 'e2e-test-validator', 'warn', '⚠️ WARNING: No Spring Boot microservices generated');
+      }
+
+      if (totalFrontendFiles === 0) {
+        logger.warn('⚠️ [CODE GENERATION] NO frontend micro-frontends were generated!');
+        emitAgentLog(migrationId, 'e2e-test-validator', 'warn', '⚠️ WARNING: No Angular micro-frontends generated');
+      }
+
+      // Clean up empty directories (if any were created)
+      logger.info('🧹 [CLEANUP] Removing empty directories...');
+      await cleanupEmptyDirectories(outputDir);
+      logger.info('✅ [CLEANUP] Empty directories removed');
 
     } catch (codeGenError: any) {
       logger.error('[CODE GENERATION] Failed:', codeGenError);
