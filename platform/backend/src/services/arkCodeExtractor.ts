@@ -140,6 +140,66 @@ export class ArkCodeExtractor {
   }
 
   /**
+   * Extract monolithic backend from ARK monolithic-backend-generator output
+   * Files are prefixed with "backend/" in the markdown
+   */
+  async extractMonolithicBackend(
+    arkOutput: string,
+    outputDir: string
+  ): Promise<{ success: boolean, filesWritten: number, errors: string[] }> {
+    logger.info(`🔧 Extracting monolithic backend`);
+
+    try {
+      // Extract with empty service name since paths already include "backend/"
+      const result = await this.extractAndWriteCode(arkOutput, outputDir, '');
+
+      return {
+        success: result.errors.length === 0,
+        filesWritten: result.filesWritten.length,
+        errors: result.errors
+      };
+
+    } catch (error: any) {
+      logger.error(`Failed to extract monolithic backend:`, error);
+      return {
+        success: false,
+        filesWritten: 0,
+        errors: [error.message]
+      };
+    }
+  }
+
+  /**
+   * Extract monolithic frontend from ARK monolithic-frontend-generator output
+   * Files are prefixed with "frontend/" in the markdown
+   */
+  async extractMonolithicFrontend(
+    arkOutput: string,
+    outputDir: string
+  ): Promise<{ success: boolean, filesWritten: number, errors: string[] }> {
+    logger.info(`🎨 Extracting monolithic frontend`);
+
+    try {
+      // Extract with empty service name since paths already include "frontend/"
+      const result = await this.extractAndWriteCode(arkOutput, outputDir, '');
+
+      return {
+        success: result.errors.length === 0,
+        filesWritten: result.filesWritten.length,
+        errors: result.errors
+      };
+
+    } catch (error: any) {
+      logger.error(`Failed to extract monolithic frontend:`, error);
+      return {
+        success: false,
+        filesWritten: 0,
+        errors: [error.message]
+      };
+    }
+  }
+
+  /**
    * Extract complete micro-frontend structure from ARK frontend-migrator output
    */
   async extractMicroFrontend(

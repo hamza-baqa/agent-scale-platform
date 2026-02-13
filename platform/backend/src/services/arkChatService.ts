@@ -1523,6 +1523,110 @@ class ArkChatService {
   }
 
   /**
+   * Generate monolithic backend with ARK monolithic-backend-generator agent
+   */
+  async generateMonolithicBackendWithARK(
+    migrationPlan: any,
+    repoPath: string,
+    businessLogicPrompt?: string
+  ): Promise<{
+    success: boolean;
+    rawOutput?: string;
+    error?: string;
+  }> {
+    try {
+      logger.info(`🔧 Calling ARK monolithic-backend-generator agent`);
+
+      let prompt = `Based on this migration plan and business logic analysis, generate a COMPLETE Spring Boot monolithic application.
+
+**Migration Plan:**
+${JSON.stringify(migrationPlan, null, 2)}
+
+**Repository Path:** ${repoPath}
+
+**Domain Models:** ${migrationPlan.entities?.map((e: any) => e.name).join(', ') || 'Unknown'}
+**Endpoints:** ${migrationPlan.controllers?.flatMap((c: any) => c.endpoints || []).length || 0} REST endpoints
+
+Generate a complete Spring Boot application following the structure defined in your instructions.
+`;
+
+      if (businessLogicPrompt) {
+        prompt += `\n\n**Business Logic Requirements:**\n${businessLogicPrompt}`;
+      }
+
+      const result = await this.callArkAgent('monolithic-backend-generator', prompt);
+      return result;
+
+    } catch (error: any) {
+      logger.error('Failed to generate monolithic backend with ARK:', error);
+
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        return {
+          success: false,
+          error: `ARK system not available at ${this.arkApiUrl}`
+        };
+      }
+
+      return {
+        success: false,
+        error: `Backend generation failed: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Generate monolithic frontend with ARK monolithic-frontend-generator agent
+   */
+  async generateMonolithicFrontendWithARK(
+    migrationPlan: any,
+    repoPath: string,
+    businessLogicPrompt?: string
+  ): Promise<{
+    success: boolean;
+    rawOutput?: string;
+    error?: string;
+  }> {
+    try {
+      logger.info(`🎨 Calling ARK monolithic-frontend-generator agent`);
+
+      let prompt = `Based on this migration plan and business logic analysis, generate a COMPLETE Angular monolithic application.
+
+**Migration Plan:**
+${JSON.stringify(migrationPlan, null, 2)}
+
+**Repository Path:** ${repoPath}
+
+**Frontend Components:** Login, Register, Dashboard, Accounts, Transactions, Cards, Transfers
+**API Endpoints:** All endpoints from the backend REST API
+
+Generate a complete Angular application following the structure defined in your instructions.
+`;
+
+      if (businessLogicPrompt) {
+        prompt += `\n\n**Business Logic Requirements:**\n${businessLogicPrompt}`;
+      }
+
+      const result = await this.callArkAgent('monolithic-frontend-generator', prompt);
+      return result;
+
+    } catch (error: any) {
+      logger.error('Failed to generate monolithic frontend with ARK:', error);
+
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        return {
+          success: false,
+          error: `ARK system not available at ${this.arkApiUrl}`
+        };
+      }
+
+      return {
+        success: false,
+        error: `Frontend generation failed: ${error.message}`
+      };
+    }
+  }
+
+  /**
    * Generic method to call any ARK agent with a custom prompt
    */
   async callArkAgent(
