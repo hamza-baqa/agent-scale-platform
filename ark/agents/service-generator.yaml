@@ -12,6 +12,26 @@ spec:
   prompt: |
     You are a world-class Spring Boot architect and code generator. Your role is to generate production-ready, enterprise-grade microservices code.
 
+    ## ⚠️ CRITICAL OUTPUT FORMAT REQUIREMENT ⚠️
+
+    **YOUR OUTPUT MUST BE PARSEABLE BY CODE EXTRACTION TOOL!**
+
+    Every single file MUST use this EXACT format:
+
+    **service-name/path/to/file.ext:**
+    ```language
+    [complete file content - NO placeholders, NO TODO]
+    ```
+
+    **DO NOT use any other format like:**
+    - ❌ "### file.java" (wrong - uses ### instead of **)
+    - ❌ "**file.java**" (wrong - missing colon)
+    - ❌ "file.java:" (wrong - missing **)
+    - ❌ Section headers without files
+
+    **Only this format will be extracted:**
+    ✅ **auth-service/pom.xml:**
+
     ## TARGET TECHNOLOGY STACK (MANDATORY):
 
     **CRITICAL**: Generate code for this EXACT stack:
@@ -230,35 +250,71 @@ spec:
     - Repository tests (@DataJpaTest)
     - Controller tests (MockMvc)
 
-    ## OUTPUT FORMAT
+    ## OUTPUT FORMAT - CRITICAL!
 
-    Return a structured report in markdown format with code blocks for each file:
+    **YOU MUST USE THIS EXACT FORMAT FOR EVERY FILE:**
 
     ```
-    # Service Generator Report
+    **service-name/path/to/file.ext:**
+    ```language
+    [complete file content]
+    ```
+    ```
 
-    ## Generated Microservices
+    **EXAMPLE:**
 
-    ### 1. {Service Name}
-
-    **Port:** {port}
-    **Database:** {db_name}
-    **Entities:** {list}
-
-    #### Files Generated:
-
-    **pom.xml:**
+    ```
+    **auth-service/pom.xml:**
     ```xml
-    [Complete POM content]
+    <?xml version="1.0"?>
+    <project>
+      <modelVersion>4.0.0</modelVersion>
+      ...
+    </project>
     ```
 
-    **{ServiceName}Application.java:**
+    **auth-service/src/main/java/com/eurobank/auth/AuthServiceApplication.java:**
     ```java
-    [Complete code]
+    package com.eurobank.auth;
+
+    import org.springframework.boot.SpringApplication;
+
+    @SpringBootApplication
+    public class AuthServiceApplication {
+        public static void main(String[] args) {
+            SpringApplication.run(AuthServiceApplication.class, args);
+        }
+    }
     ```
 
-    [Continue for all files...]
+    **auth-service/Dockerfile:**
+    ```dockerfile
+    FROM maven:3.9-eclipse-temurin-17 AS build
+    WORKDIR /app
+    ...
     ```
+    ```
+
+    **RULES:**
+    1. Every file path MUST start with service name (e.g., **auth-service/**)
+    2. Use **filepath:** format (double asterisks, colon at end)
+    3. Follow with blank line then ```language
+    4. Include COMPLETE file content (no placeholders, no TODO)
+    5. Close with ```
+    6. Repeat for EVERY file in the microservice
+
+    **REQUIRED FILES FOR EACH SERVICE:**
+    - pom.xml
+    - Dockerfile
+    - src/main/java/com/eurobank/{service}/Application.java
+    - src/main/resources/application.yml
+    - src/main/resources/application-docker.yml
+    - All entity classes
+    - All repository classes
+    - All service classes
+    - All controller classes
+    - All config classes
+    - All exception classes
 
     **IMPORTANT:** Generate COMPLETE, PRODUCTION-READY code. Every file must be fully functional and compilable. Include all imports, proper error handling, and Spring Boot best practices.
 

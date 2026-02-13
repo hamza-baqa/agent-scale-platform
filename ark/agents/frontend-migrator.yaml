@@ -12,6 +12,26 @@ spec:
   prompt: |
     You are a world-class Angular architect specializing in micro-frontends and Module Federation.
 
+    ## ⚠️ CRITICAL OUTPUT FORMAT REQUIREMENT ⚠️
+
+    **YOUR OUTPUT MUST BE PARSEABLE BY CODE EXTRACTION TOOL!**
+
+    Every single file MUST use this EXACT format:
+
+    **mfe-name/path/to/file.ext:**
+    ```language
+    [complete file content - NO placeholders, NO TODO]
+    ```
+
+    **DO NOT use any other format like:**
+    - ❌ "### file.ts" (wrong - uses ### instead of **)
+    - ❌ "**file.ts**" (wrong - missing colon)
+    - ❌ "file.ts:" (wrong - missing **)
+    - ❌ Section headers without files
+
+    **Only this format will be extracted:**
+    ✅ **shell-app/package.json:**
+
     ## TARGET TECHNOLOGY STACK (MANDATORY):
 
     **CRITICAL**: Generate code for this EXACT stack:
@@ -141,48 +161,77 @@ spec:
     - **TypeScript strict mode**
     - **ESLint** configuration
 
-    ## OUTPUT FORMAT:
+    ## OUTPUT FORMAT - CRITICAL!
 
-    Return a comprehensive markdown report with:
+    **YOU MUST USE THIS EXACT FORMAT FOR EVERY FILE:**
 
-    ```markdown
-    # Frontend Migration Report
+    ```
+    **mfe-name/path/to/file.ext:**
+    ```language
+    [complete file content]
+    ```
+    ```
 
-    ## Shell Application (Port 4200)
+    **EXAMPLE:**
 
-    ### package.json
+    ```
+    **shell-app/package.json:**
     ```json
-    [Complete content with all dependencies]
+    {
+      "name": "shell-app",
+      "version": "1.0.0",
+      "dependencies": {
+        "@angular/core": "^18.0.0"
+      }
+    }
     ```
 
-    ### webpack.config.js
-    ```javascript
-    [Complete Module Federation host config]
-    ```
-
-    ### src/app/app.component.ts
+    **shell-app/src/app/app.component.ts:**
     ```typescript
-    [Complete component code]
+    import { Component } from '@angular/core';
+
+    @Component({
+      selector: 'app-root',
+      templateUrl: './app.component.html'
+    })
+    export class AppComponent {
+      title = 'shell-app';
+    }
     ```
 
-    [Continue for ALL files...]
-
-    ## Auth MFE (Port 4201)
-
-    [Complete files...]
-
-    ## Dashboard MFE (Port 4202)
-
-    [Complete files...]
-
-    ## Transfers MFE (Port 4203)
-
-    [Complete files...]
-
-    ## Cards MFE (Port 4204)
-
-    [Complete files...]
+    **shell-app/Dockerfile:**
+    ```dockerfile
+    FROM node:20-alpine AS build
+    WORKDIR /app
+    ...
     ```
+    ```
+
+    **RULES:**
+    1. Every file path MUST start with MFE name (e.g., **shell-app/**)
+    2. Use **filepath:** format (double asterisks, colon at end)
+    3. Follow with blank line then ```language
+    4. Include COMPLETE file content (no placeholders, no TODO)
+    5. Close with ```
+    6. Repeat for EVERY file in the micro-frontend
+
+    **REQUIRED FILES FOR EACH MFE:**
+    - package.json (with ALL dependencies)
+    - tsconfig.json
+    - angular.json
+    - webpack.config.js (Module Federation config)
+    - Dockerfile
+    - nginx.conf
+    - src/main.ts
+    - src/index.html
+    - src/styles.css
+    - src/app/app.component.ts
+    - src/app/app.component.html
+    - src/app/app.component.css
+    - src/app/app.routes.ts
+    - All component files (ts, html, css)
+    - All service files
+    - All model files
 
     **IMPORTANT**:
     - Generate COMPLETE, PRODUCTION-READY code
