@@ -234,9 +234,11 @@ echo ""
 echo -e "${BLUE}[6/7] Setting Up Port Forwards${NC}"
 echo ""
 
-# Port forward ARK API
-kubectl port-forward -n default svc/ark-api 8080:80 > "$PID_DIR/ark-api-forward.log" 2>&1 &
-echo $! > "$PID_DIR/ark-api-forward.pid"
+# Port forward ARK API (detached from terminal)
+nohup kubectl port-forward -n default svc/ark-api 8080:80 > "$PID_DIR/ark-api-forward.log" 2>&1 &
+ARK_API_PID=$!
+echo $ARK_API_PID > "$PID_DIR/ark-api-forward.pid"
+disown $ARK_API_PID
 
 # Wait for ARK API to be ready with retry (up to 30 seconds)
 echo "Waiting for ARK API to be ready..."
@@ -256,9 +258,11 @@ if [ "$ARK_READY" = false ]; then
     exit 1
 fi
 
-# Port forward ARK Dashboard
-kubectl port-forward -n default svc/ark-dashboard 3001:3000 > "$PID_DIR/ark-dashboard-forward.log" 2>&1 &
-echo $! > "$PID_DIR/ark-dashboard-forward.pid"
+# Port forward ARK Dashboard (detached from terminal)
+nohup kubectl port-forward -n default svc/ark-dashboard 3001:3000 > "$PID_DIR/ark-dashboard-forward.log" 2>&1 &
+ARK_DASH_PID=$!
+echo $ARK_DASH_PID > "$PID_DIR/ark-dashboard-forward.pid"
+disown $ARK_DASH_PID
 sleep 2
 
 if curl -s http://localhost:3001 > /dev/null 2>&1; then
@@ -295,10 +299,12 @@ if [ ! -d "platform/frontend/node_modules" ]; then
     cd platform/frontend && npm install >/dev/null 2>&1 && cd ../..
 fi
 
-# Start backend
+# Start backend (detached from terminal)
 cd platform/backend
-npm run dev > "../../$PID_DIR/backend.log" 2>&1 &
-echo $! > "../../$PID_DIR/backend.pid"
+nohup npm run dev > "../../$PID_DIR/backend.log" 2>&1 &
+BACKEND_PID=$!
+echo $BACKEND_PID > "../../$PID_DIR/backend.pid"
+disown $BACKEND_PID
 cd ../..
 
 echo "Waiting for backend to start..."
@@ -310,10 +316,12 @@ for i in {1..30}; do
     sleep 1
 done
 
-# Start frontend
+# Start frontend (detached from terminal)
 cd platform/frontend
-npm run dev > "../../$PID_DIR/frontend.log" 2>&1 &
-echo $! > "../../$PID_DIR/frontend.pid"
+nohup npm run dev > "../../$PID_DIR/frontend.log" 2>&1 &
+FRONTEND_PID=$!
+echo $FRONTEND_PID > "../../$PID_DIR/frontend.pid"
+disown $FRONTEND_PID
 cd ../..
 
 echo "Waiting for frontend to start..."

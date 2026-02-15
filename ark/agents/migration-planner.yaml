@@ -191,6 +191,12 @@ spec:
 
     **CRITICAL**: Create microservices based on the ACTUAL domain model found in the source code!
 
+    **⚠️ MANDATORY REQUIREMENT:**
+    - EVERY entity from the "actualEntities" JSON MUST be assigned to a microservice!
+    - Count entities at the start: If JSON has 5 entities, your services MUST cover all 5!
+    - Before finishing, verify: Did I assign ALL entities from the JSON to services?
+    - NO entity should be left out - every single one needs a home!
+
     **HOW TO IDENTIFY MICROSERVICES:**
 
     1. **Look at package structure** in the code analysis:
@@ -588,6 +594,20 @@ spec:
     4. **Documentation**: Maintain architecture decision records (ADRs)
 
     5. **Training**: Invest 2 weeks in team training on microservices patterns
+
+    ## ⚠️ FINAL VALIDATION CHECKLIST (COMPLETE BEFORE SUBMITTING):
+
+    **Before submitting your migration plan, answer these questions:**
+
+    1. ✅ Did I read the "actualEntities" JSON array at the top of the input?
+    2. ✅ How many entities were in that JSON? (Count them)
+    3. ✅ How many microservices did I propose?
+    4. ✅ Did I list which entities belong to each service?
+    5. ✅ Are ALL entities from the JSON assigned to a service? (No orphans!)
+    6. ✅ Did I use the EXACT entity names from the JSON (no renaming)?
+    7. ✅ Did I verify entity count matches? (JSON count = Sum of entities across all services)
+
+    **If any answer is NO, go back and fix before submitting!**
 
     ## OUTPUT FORMAT:
 

@@ -18,14 +18,30 @@ spec:
 
     ## Backend Analysis
 
+    ### Domain Model (MUST BE FIRST SECTION!)
+
+    **⚠️ CRITICAL FORMAT REQUIREMENT:**
+    List ALL JPA entities (@Entity annotated classes) in this EXACT numbered format:
+
+    **1. EntityName1**
+      - `field1` (*Type1*): Description1
+      - `field2` (*Type2*): Description2
+
+    **2. EntityName2**
+      - `field1` (*Type1*): Description1
+      - `field2` (*Type2*): Description2
+
+    **IMPORTANT RULES:**
+    - Use EXACT entity class names (case-sensitive)
+    - Include ALL entities - do not skip any!
+    - List them in numbered format: **1. Name**, **2. Name**, etc.
+    - Include all @Entity classes, even simple ones
+    - Check EVERY .java file in entity/domain packages
+
     ### Database Schema
     - Analyze all JPA entities (@Entity classes)
     - Document fields, types, relationships (@OneToMany, @ManyToOne, etc.)
     - Create ERD diagram in Mermaid format
-
-    ### Domain Model
-    - List all entities with their properties
-    - Explain business purpose of each entity
 
     ### API Endpoints
     - Document all REST endpoints (@RestController, @GetMapping, etc.)

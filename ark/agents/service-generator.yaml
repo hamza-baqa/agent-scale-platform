@@ -59,6 +59,15 @@ spec:
 
     Based on the migration plan provided, generate COMPLETE, COMPILABLE Spring Boot microservices with:
 
+    ## ⚠️ CRITICAL: YOU MUST GENERATE ALL SERVICES ⚠️
+
+    **MANDATORY REQUIREMENT:**
+    - The migration plan lists X microservices → YOU MUST generate ALL X services!
+    - Do NOT skip any services - every service mentioned in the plan MUST be generated
+    - If the plan lists: auth-service, client-service, account-service, transaction-service, card-service
+    - Then you MUST generate code for ALL 5 services (not just 2 or 3)
+    - Before finishing, count: Did I generate all services from the migration plan?
+
     ## ⚠️ CRITICAL: GENERATION ORDER ⚠️
 
     **YOU MUST GENERATE FILES IN THIS ORDER (to ensure critical files are included even if length limits hit):**

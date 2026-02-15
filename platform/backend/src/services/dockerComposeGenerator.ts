@@ -298,7 +298,7 @@ ${config.services.map(s => `${s.name.toUpperCase().replace(/-/g, '_')}_URL=http:
   /**
    * Generate startup script for easy execution
    */
-  async generateStartupScript(outputPath: string): Promise<void> {
+  async generateStartupScript(outputPath: string, config?: DockerComposeConfig): Promise<void> {
     const scriptContent = `#!/bin/bash
 
 # Startup script for Banque Application
@@ -347,12 +347,14 @@ echo "✨ Application started successfully!"
 echo ""
 echo "🌐 Access URLs:"
 echo "   - Shell App: http://localhost:4200"
-echo "   - Auth MFE: http://localhost:4201"
+echo "   - Auth MFE: http://localhost:4201"${config && config.microFrontends.length > 2 ? `
 echo "   - Dashboard MFE: http://localhost:4202"
 echo "   - Transfers MFE: http://localhost:4203"
-echo "   - Cards MFE: http://localhost:4204"
+echo "   - Cards MFE: http://localhost:4204"` : ''}${config?.includeApiGateway ? `
 echo "   - API Gateway: http://localhost:8080"
-echo "   - API Docs: http://localhost:8080/swagger-ui.html"
+echo "   - API Docs: http://localhost:8080/swagger-ui.html"` : `
+echo "   - Individual Service APIs:"${config && config.services ? config.services.map(s => `
+echo "     - ${s.name}: http://localhost:${s.port} (Swagger: http://localhost:${s.port}/swagger-ui.html)"`).join('') : ''}`}
 echo ""
 echo "📊 View logs:"
 echo "   \$DOCKER_COMPOSE logs -f [service-name]"
