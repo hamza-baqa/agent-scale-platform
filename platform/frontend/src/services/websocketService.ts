@@ -85,6 +85,10 @@ class WebSocketService {
         console.log('✅ Agent completed:', data);
         this.emit('agent-completed', data);
       });
+      this.socket.on('agent-reset', (data) => {
+        console.log('🔄 Agent reset:', data);
+        this.emit('agent-reset', data);
+      });
       this.socket.on('migration-completed', (data) => {
         console.log('🎉 Migration completed:', data);
         this.emit('migration-completed', data);
@@ -176,6 +180,70 @@ class WebSocketService {
   isConnected(): boolean {
     return this.socket?.connected || false;
   }
+
+  // ============================================================================
+  // Retry Loop Event Listeners
+  // ============================================================================
+
+  onRetryLoopStarted(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.on('retry-loop-started', callback);
+    }
+  }
+
+  offRetryLoopStarted(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.off('retry-loop-started', callback);
+    }
+  }
+
+  onRetryLoopProgress(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.on('retry-loop-progress', callback);
+    }
+  }
+
+  offRetryLoopProgress(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.off('retry-loop-progress', callback);
+    }
+  }
+
+  onRetryLoopIterationCompleted(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.on('retry-loop-iteration-completed', callback);
+    }
+  }
+
+  offRetryLoopIterationCompleted(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.off('retry-loop-iteration-completed', callback);
+    }
+  }
+
+  onRetryLoopSuccess(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.on('retry-loop-success', callback);
+    }
+  }
+
+  offRetryLoopSuccess(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.off('retry-loop-success', callback);
+    }
+  }
+
+  onRetryLoopFailed(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.on('retry-loop-failed', callback);
+    }
+  }
+
+  offRetryLoopFailed(callback: (data: any) => void): void {
+    if (this.socket) {
+      this.socket.off('retry-loop-failed', callback);
+    }
+  }
 }
 
 // Lazy singleton - only create instance in browser
@@ -192,6 +260,16 @@ function getWebSocketService(): WebSocketService {
       on: () => {},
       off: () => {},
       isConnected: () => false,
+      onRetryLoopStarted: () => {},
+      offRetryLoopStarted: () => {},
+      onRetryLoopProgress: () => {},
+      offRetryLoopProgress: () => {},
+      onRetryLoopIterationCompleted: () => {},
+      offRetryLoopIterationCompleted: () => {},
+      onRetryLoopSuccess: () => {},
+      offRetryLoopSuccess: () => {},
+      onRetryLoopFailed: () => {},
+      offRetryLoopFailed: () => {},
     } as any;
   }
 

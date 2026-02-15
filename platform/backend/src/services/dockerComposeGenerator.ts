@@ -314,13 +314,25 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
+# Detect Docker Compose command (v1 uses docker-compose, v2 uses docker compose)
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo "❌ Docker Compose not found. Please install Docker Compose."
+    exit 1
+fi
+
+echo "📦 Using: \$DOCKER_COMPOSE"
+
 # Build images
 echo "📦 Building Docker images..."
-docker-compose build
+\$DOCKER_COMPOSE build
 
 # Start services
 echo "🔧 Starting services..."
-docker-compose up -d
+\$DOCKER_COMPOSE up -d
 
 # Wait for health checks
 echo "⏳ Waiting for services to be healthy..."
@@ -328,7 +340,7 @@ sleep 30
 
 # Check service health
 echo "✅ Checking service health..."
-docker-compose ps
+\$DOCKER_COMPOSE ps
 
 echo ""
 echo "✨ Application started successfully!"
@@ -343,10 +355,10 @@ echo "   - API Gateway: http://localhost:8080"
 echo "   - API Docs: http://localhost:8080/swagger-ui.html"
 echo ""
 echo "📊 View logs:"
-echo "   docker-compose logs -f [service-name]"
+echo "   \$DOCKER_COMPOSE logs -f [service-name]"
 echo ""
 echo "🛑 Stop application:"
-echo "   docker-compose down"
+echo "   \$DOCKER_COMPOSE down"
 `;
 
     await fs.writeFile(path.join(outputPath, 'start.sh'), scriptContent, 'utf-8');
@@ -365,7 +377,17 @@ echo "   docker-compose down"
 
 echo "🛑 Stopping Banque Application..."
 
-docker-compose down
+# Detect Docker Compose command (v1 uses docker-compose, v2 uses docker compose)
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null; then
+    DOCKER_COMPOSE="docker compose"
+else
+    echo "❌ Docker Compose not found. Please install Docker Compose."
+    exit 1
+fi
+
+\$DOCKER_COMPOSE down
 
 echo "✅ Application stopped successfully!"
 `;

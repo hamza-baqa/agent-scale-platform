@@ -92,7 +92,9 @@ export class ArkCodeExtractor {
     const codeBlockPattern = /\*\*([^*]+?):\*\*\s*\n+```(\w+)\n([\s\S]*?)```/g;
 
     let match;
+    let matchCount = 0;
     while ((match = codeBlockPattern.exec(markdown)) !== null) {
+      matchCount++;
       const filepath = match[1].trim();
       const language = match[2];
       const code = match[3];
@@ -105,6 +107,18 @@ export class ArkCodeExtractor {
         language,
         code: code.trim()
       });
+
+      if (matchCount <= 5) {
+        logger.info(`  📄 Found code block #${matchCount}: ${cleanFilepath} (${language}, ${code.length} bytes)`);
+      }
+    }
+
+    if (matchCount === 0) {
+      logger.warn('⚠️ NO code blocks matched the expected pattern!');
+      logger.warn('   Expected format: **filepath:**\\n```language\\ncode\\n```');
+      logger.warn(`   Markdown preview (first 500 chars): ${markdown.substring(0, 500)}`);
+    } else {
+      logger.info(`✅ Total code blocks found: ${matchCount}`);
     }
 
     return blocks;
@@ -235,17 +249,63 @@ export class ArkCodeExtractor {
   parseServiceNames(arkOutput: string): string[] {
     const serviceNames: string[] = [];
 
-    // Match patterns like:
-    // ### 1. auth-service
-    // ## auth-service
-    // ### auth-service
-    const headerPattern = /##+ (?:\d+\.\s+)?([a-z]+-service)/gi;
+    // Pattern 1: Markdown headers with service names
+    // ### 1. auth-service, ## auth-service, ### auth-service
+    const headerPattern1 = /##+ (?:\d+\.\s+)?([a-z]+-service)/gi;
+
+    // Pattern 2: Bold text with service names
+    // **auth-service**, **1. auth-service**
+    const headerPattern2 = /\*\*(?:\d+\.\s+)?([a-z]+-service)\*\*/gi;
+
+    // Pattern 3: Service names in code block filenames
+    // **auth-service/pom.xml:**
+    const filepathPattern = /\*\*([a-z]+-service)\/[^*]+:\*\*/gi;
+
+    // Pattern 4: Any word ending in -service (case insensitive)
+    // Auth-Service, AUTH-SERVICE, auth-service
+    const anyServicePattern = /\b([a-z]+-service)\b/gi;
 
     let match;
-    while ((match = headerPattern.exec(arkOutput)) !== null) {
+
+    // Try Pattern 1
+    while ((match = headerPattern1.exec(arkOutput)) !== null) {
       const serviceName = match[1].toLowerCase();
       if (!serviceNames.includes(serviceName)) {
         serviceNames.push(serviceName);
+        logger.info(`Found service (Pattern 1 - header): ${serviceName}`);
+      }
+    }
+
+    // Try Pattern 2
+    headerPattern2.lastIndex = 0;
+    while ((match = headerPattern2.exec(arkOutput)) !== null) {
+      const serviceName = match[1].toLowerCase();
+      if (!serviceNames.includes(serviceName)) {
+        serviceNames.push(serviceName);
+        logger.info(`Found service (Pattern 2 - bold): ${serviceName}`);
+      }
+    }
+
+    // Try Pattern 3 (most reliable - from actual code blocks)
+    filepathPattern.lastIndex = 0;
+    while ((match = filepathPattern.exec(arkOutput)) !== null) {
+      const serviceName = match[1].toLowerCase();
+      if (!serviceNames.includes(serviceName)) {
+        serviceNames.push(serviceName);
+        logger.info(`Found service (Pattern 3 - filepath): ${serviceName}`);
+      }
+    }
+
+    // Try Pattern 4 as fallback
+    if (serviceNames.length === 0) {
+      logger.warn('⚠️ No services found with patterns 1-3, trying fallback pattern');
+      anyServicePattern.lastIndex = 0;
+      while ((match = anyServicePattern.exec(arkOutput)) !== null) {
+        const serviceName = match[1].toLowerCase();
+        if (!serviceNames.includes(serviceName)) {
+          serviceNames.push(serviceName);
+          logger.info(`Found service (Pattern 4 - fallback): ${serviceName}`);
+        }
       }
     }
 

@@ -432,6 +432,21 @@ Micro-frontends ready for deployment!`
         output: '' // Will be populated by actual validation
       },
       {
+        name: 'unit-test-validator',
+        duration: 20000,
+        output: '' // Will be populated by ARK agent
+      },
+      {
+        name: 'integration-test-validator',
+        duration: 20000,
+        output: '' // Will be populated by ARK agent
+      },
+      {
+        name: 'e2e-test-validator',
+        duration: 20000,
+        output: '' // Will be populated by ARK agent
+      },
+      {
         name: 'container-deployer',
         duration: 20000, // Time to build and deploy containers
         output: `[SUCCESS] Container Deployment Complete
@@ -672,6 +687,18 @@ docker-compose restart [service-name]
           logger.error(`Functional validation failed:`, error);
           agentOutput = `[FAILED] Functional Validation Failed\n\nError: ${error.message}\n\nPlease check the logs for more details.`;
         }
+      } else if (agent.name === 'unit-test-validator') {
+        // Unit test validation - handled in repoMigrationRoutes.ts
+        // This is a placeholder for the agent progression system
+        agentOutput = `[INFO] Unit test validation is handled by the migration workflow.\n\nPlease check the migration progress for details.`;
+      } else if (agent.name === 'integration-test-validator') {
+        // Integration test validation - handled in repoMigrationRoutes.ts
+        // This is a placeholder for the agent progression system
+        agentOutput = `[INFO] Integration test validation is handled by the migration workflow.\n\nPlease check the migration progress for details.`;
+      } else if (agent.name === 'e2e-test-validator') {
+        // E2E test validation - handled in repoMigrationRoutes.ts
+        // This is a placeholder for the agent progression system
+        agentOutput = `[INFO] E2E test validation is handled by the migration workflow.\n\nPlease check the migration progress for details.`;
       } else if (agent.name === 'container-deployer') {
         // Deploy in containers - ONLY after quality validation passes
         try {

@@ -52,9 +52,11 @@ export type AgentType =
   | 'migration-planner'
   | 'service-generator'
   | 'frontend-migrator'
+  | 'quality-validator'
   | 'unit-test-validator'
   | 'integration-test-validator'
   | 'e2e-test-validator'
+  | 'build-validator'
   | 'container-deployer';
 
 export type AgentStatus =

@@ -224,12 +224,48 @@ router.get('/:id/download', async (req, res, next) => {
     }
 
     // Check if migration is completed (analysis + planning done)
-    if (migration.status !== 'completed' && migration.status !== 'validated') {
+    // Allow download for: completed, validated, OR completed_with_errors
+    if (migration.status !== 'completed' && migration.status !== 'validated' && migration.status !== 'completed_with_errors') {
+      // Special handling for retrying state
+      if (migration.status === 'retrying') {
+        return res.status(400).json({
+          error: 'Migration is retrying',
+          message: 'Critical errors found. System is automatically retrying with adjusted parameters.',
+          retryAttempt: (migration as any).retryAttempt || 1,
+          maxRetries: 3
+        });
+      }
+
       return res.status(400).json({
         error: 'Migration not ready',
-        message: 'Please wait for migration analysis to complete before downloading code'
+        message: 'Please wait for migration to complete before downloading code',
+        currentStatus: migration.status
       });
     }
+
+    // Log warning if downloading code with errors
+    if (migration.status === 'completed_with_errors') {
+      logger.warn(`⚠️ Allowing download despite errors for migration ${id}`, {
+        totalErrors: (migration as any).errorAnalysis?.totalErrors || 0,
+        retriesAttempted: (migration as any).errorAnalysis?.retriesAttempted || 0
+      });
+    }
+
+    // CRITICAL: Validate NO critical errors before download (SKIP for completed_with_errors)
+    if (migration.status !== 'completed_with_errors' && (migration as any).errorAnalysis) {
+      const criticalIssues = (migration as any).errorAnalysis.analysis?.criticalIssues || [];
+      if (criticalIssues.length > 0) {
+        logger.warn(`🚫 Download blocked: ${criticalIssues.length} critical issues remain`);
+        return res.status(400).json({
+          error: 'Download blocked - critical errors remain',
+          message: 'Code has critical errors that must be resolved.',
+          criticalIssues: criticalIssues.length,
+          summary: (migration as any).errorAnalysis.analysis?.summary
+        });
+      }
+    }
+
+    logger.info(`✅ Validation passed - allowing download for ${id}`);
 
     // Check if code has already been generated
     let downloadPath = migrationService.getDownloadPath(id);

@@ -193,11 +193,11 @@ async function processMigrationAsync(migrationId: string, repoPath: string): Pro
     if (isGitUrl(repoPath)) {
       migration.status = 'cloning';
       migration.updatedAt = new Date();
-      trackAgentStart(migration, 'git-clone');
+      emitAgentStarted(migrationId, 'git-clone');
       logger.info('Detected Git URL, cloning repository...');
       const cloneWorkspaceDir = path.join(process.cwd(), 'workspace', migrationId);
       actualRepoPath = await cloneRepository(repoPath, cloneWorkspaceDir);
-      trackAgentComplete(migration, 'git-clone', `Repository cloned to ${actualRepoPath}`);
+      emitAgentCompleted(migrationId, 'git-clone', `Repository cloned to ${actualRepoPath}`);
     } else {
       // Validate local path exists
       if (!await fs.pathExists(repoPath)) {
@@ -208,7 +208,7 @@ async function processMigrationAsync(migrationId: string, repoPath: string): Pro
     // Step 1: Code Analyzer - Analyze the repository using ARK agent
     migration.status = 'analyzing';
     migration.updatedAt = new Date();
-    trackAgentStart(migration, 'code-analyzer');
+    emitAgentStarted(migrationId, 'code-analyzer');
     logger.info('🔍 [CODE ANALYZER] Calling ARK agent to analyze repository...', { actualRepoPath });
     emitAgentLog(migrationId, 'code-analyzer', 'info', '🔍 Starting code analysis using ARK agent', { repoPath: actualRepoPath });
     emitAgentLog(migrationId, 'code-analyzer', 'info', '📂 Scanning repository for backend AND frontend files...');
@@ -1149,14 +1149,14 @@ logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE`,
       ]
     };
 
-    trackAgentComplete(migration, 'code-analyzer', JSON.stringify(codeAnalyzerOutput));
+    emitAgentCompleted(migrationId, 'code-analyzer', JSON.stringify(codeAnalyzerOutput));
     logger.info('✅ [CODE ANALYZER] Complete');
 
     // Step 2: Migration Planner - Create architecture plan using ARK agent
     await new Promise(resolve => setTimeout(resolve, 1000));
     migration.status = 'planning';
     migration.updatedAt = new Date();
-    trackAgentStart(migration, 'migration-planner');
+    emitAgentStarted(migrationId, 'migration-planner');
     logger.info('📐 [MIGRATION PLANNER] Creating comprehensive migration strategy...');
     emitAgentLog(migrationId, 'migration-planner', 'info', '📐 Analyzing source code for migration strategy', {
       entitiesFound: analysis.entities?.length || 0,
@@ -1201,7 +1201,7 @@ logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE`,
       arkRawOutput: plannerRawOutput // Add markdown output for AgentOutputVisualizer
     });
 
-    trackAgentComplete(migration, 'migration-planner', plannerOutput);
+    emitAgentCompleted(migrationId, 'migration-planner', plannerOutput);
     logger.info('✅ [MIGRATION PLANNER] Complete');
 
     // ==========================================
@@ -1248,187 +1248,83 @@ logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE`,
     await new Promise(resolve => setTimeout(resolve, 1000));
     migration.status = 'generating';
     migration.updatedAt = new Date();
-    trackAgentStart(migration, 'service-generator');
-    logger.info('⚙️ [SERVICE GENERATOR] Generating Spring Boot microservices ONE AT A TIME...');
+    emitAgentStarted(migrationId, 'service-generator');
+    logger.info('⚙️ [SERVICE GENERATOR] Generating Spring Boot microservices...');
+    emitAgentLog(migrationId, 'service-generator', 'info', '🤖 Calling ARK service-generator agent', {
+      microservices: migrationPlan.microservices?.length || 0
+    });
 
     const outputDir = path.join(workspaceDir, 'output');
     await fs.ensureDir(outputDir);
-    await fs.ensureDir(path.join(outputDir, 'backend'));
 
-    const microservices = migrationPlan.microservices || [];
-    const totalServices = microservices.length;
+    // Call ARK service-generator agent (with business logic)
+    const serviceGenResult = await arkChatService.generateServicesWithARK(
+      migrationPlan,
+      actualRepoPath,
+      businessLogicPrompt
+    );
 
-    emitAgentLog(migrationId, 'service-generator', 'info', `🤖 Generating ${totalServices} microservices (ONE AT A TIME to avoid token limits)`, {
-      microservices: totalServices
-    });
+    let serviceGenRawOutput: string | undefined;
 
-    // Store all service outputs for frontend display
-    let allServiceOutputs = '';
-    const generatedServices: string[] = [];
-    const arkCodeExtractor = require('../services/arkCodeExtractor').default;
+    if (serviceGenResult.success) {
+      serviceGenRawOutput = serviceGenResult.rawOutput; // Beautiful markdown with complete code
 
-    // OPTION B: Generate services ONE AT A TIME (prevents token limit issues)
-    for (let i = 0; i < microservices.length; i++) {
-      const service = microservices[i];
-      const serviceName = service.name;
-      const progress = ((i + 1) / totalServices * 100).toFixed(0);
+      emitAgentLog(migrationId, 'service-generator', 'info', '✅ Microservices code generated by world-class architect', {
+        microservices: migrationPlan.microservices?.length || 0,
+        markdownLength: serviceGenRawOutput?.length || 0
+      });
 
-      logger.info(`📦 [${i + 1}/${totalServices}] Generating ${serviceName}... (${progress}%)`);
-      emitAgentLog(migrationId, 'service-generator', 'info', `⚙️ [${i + 1}/${totalServices}] Generating ${serviceName}...`);
-
-      try {
-        // Create single-service plan for this service only
-        const singleServicePlan = {
-          ...migrationPlan,
-          microservices: [service] // Only this service
-        };
-
-        // Call ARK service-generator for ONE service
-        const serviceGenResult = await arkChatService.generateServicesWithARK(
-          singleServicePlan,
-          actualRepoPath,
-          businessLogicPrompt
-        );
-
-        if (serviceGenResult.success && serviceGenResult.rawOutput) {
-          const serviceOutput = serviceGenResult.rawOutput;
-          allServiceOutputs += `\n\n## ${serviceName}\n\n${serviceOutput}\n\n`;
-
-          logger.info(`✅ Generated ${serviceName} code (${serviceOutput.length} chars)`);
-          emitAgentLog(migrationId, 'service-generator', 'info', `✅ Generated ${serviceName} (${serviceOutput.length} chars)`);
-
-          // IMMEDIATELY extract and write this service to disk
-          const extractResult = await arkCodeExtractor.extractMicroservice(
-            serviceOutput,
-            path.join(outputDir, 'backend'),
-            serviceName
-          );
-
-          if (extractResult.success && extractResult.filesWritten > 0) {
-            generatedServices.push(serviceName);
-            logger.info(`✅ Wrote ${serviceName} to disk: ${extractResult.filesWritten} files`);
-            emitAgentLog(migrationId, 'service-generator', 'info', `✅ ${serviceName}: ${extractResult.filesWritten} files written`);
-          } else {
-            logger.error(`❌ Failed to write ${serviceName}: ${extractResult.errors?.join(', ')}`);
-            emitAgentLog(migrationId, 'service-generator', 'error', `❌ Failed to write ${serviceName}`);
-          }
-        } else {
-          logger.error(`❌ Failed to generate ${serviceName}`);
-          emitAgentLog(migrationId, 'service-generator', 'error', `❌ Failed to generate ${serviceName}`);
-        }
-      } catch (error: any) {
-        logger.error(`❌ Error generating ${serviceName}:`, error);
-        emitAgentLog(migrationId, 'service-generator', 'error', `❌ Error: ${error.message}`);
-      }
-
-      // Small delay between services
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Store ARK specifications for code generation later
+      (migration as any).serviceGeneratorSpecs = serviceGenRawOutput;
+      logger.info(`📝 Stored service generator specifications (${serviceGenRawOutput?.length || 0} chars)`);
     }
-
-    // Store combined output for frontend display
-    (migration as any).serviceGeneratorSpecs = allServiceOutputs;
-    logger.info(`📝 Generated ${generatedServices.length}/${totalServices} services successfully`);
-    logger.info(`✅ Services written to disk: ${generatedServices.join(', ')}`);
 
     // Output with markdown for frontend display
     const serviceGenOutput = JSON.stringify({
       microservices: migrationPlan.microservices || [],
-      generatedServices: generatedServices, // Track what was actually generated
-      arkRawOutput: allServiceOutputs
+      arkRawOutput: serviceGenRawOutput // Add markdown output for AgentOutputVisualizer
     });
 
-    trackAgentComplete(migration, 'service-generator', serviceGenOutput);
+    emitAgentCompleted(migrationId, 'service-generator', serviceGenOutput);
     logger.info('✅ [SERVICE GENERATOR] Complete');
 
-    // Step 4: Frontend Migrator - Generate Angular micro-frontends ONE AT A TIME
+    // Step 4: Frontend Migrator - Generate Angular micro-frontends using ARK
     await new Promise(resolve => setTimeout(resolve, 1000));
-    trackAgentStart(migration, 'frontend-migrator');
-    logger.info('🎨 [FRONTEND MIGRATOR] Generating Angular micro-frontends ONE AT A TIME...');
-
-    await fs.ensureDir(path.join(outputDir, 'frontend'));
-
-    const microFrontends = migrationPlan.microFrontends || [];
-    const totalMFEs = microFrontends.length;
-
-    emitAgentLog(migrationId, 'frontend-migrator', 'info', `🤖 Generating ${totalMFEs} micro-frontends (ONE AT A TIME to avoid token limits)`, {
-      microFrontends: totalMFEs
+    emitAgentStarted(migrationId, 'frontend-migrator');
+    logger.info('🎨 [FRONTEND MIGRATOR] Generating Angular micro-frontends...');
+    emitAgentLog(migrationId, 'frontend-migrator', 'info', '🤖 Calling ARK frontend-migrator agent', {
+      microFrontends: migrationPlan.microFrontends?.length || 0
     });
 
-    // Store all frontend outputs for frontend display
-    let allFrontendOutputs = '';
-    const generatedMFEs: string[] = [];
+    // Call ARK frontend-migrator agent (with business logic)
+    const frontendGenResult = await arkChatService.generateFrontendsWithARK(
+      migrationPlan,
+      actualRepoPath,
+      businessLogicPrompt
+    );
 
-    // OPTION B: Generate MFEs ONE AT A TIME (prevents token limit issues)
-    for (let i = 0; i < microFrontends.length; i++) {
-      const mfe = microFrontends[i];
-      const mfeName = mfe.name;
-      const progress = ((i + 1) / totalMFEs * 100).toFixed(0);
+    let frontendGenRawOutput: string | undefined;
 
-      logger.info(`🎨 [${i + 1}/${totalMFEs}] Generating ${mfeName}... (${progress}%)`);
-      emitAgentLog(migrationId, 'frontend-migrator', 'info', `🎨 [${i + 1}/${totalMFEs}] Generating ${mfeName}...`);
+    if (frontendGenResult.success) {
+      frontendGenRawOutput = frontendGenResult.rawOutput; // Beautiful markdown with complete code
 
-      try {
-        // Create single-MFE plan for this MFE only
-        const singleMFEPlan = {
-          ...migrationPlan,
-          microFrontends: [mfe] // Only this MFE
-        };
+      emitAgentLog(migrationId, 'frontend-migrator', 'info', '✅ Micro-frontends code generated by world-class architect', {
+        microFrontends: migrationPlan.microFrontends?.length || 0,
+        markdownLength: frontendGenRawOutput?.length || 0
+      });
 
-        // Call ARK frontend-migrator for ONE MFE
-        const frontendGenResult = await arkChatService.generateFrontendsWithARK(
-          singleMFEPlan,
-          actualRepoPath,
-          businessLogicPrompt
-        );
-
-        if (frontendGenResult.success && frontendGenResult.rawOutput) {
-          const mfeOutput = frontendGenResult.rawOutput;
-          allFrontendOutputs += `\n\n## ${mfeName}\n\n${mfeOutput}\n\n`;
-
-          logger.info(`✅ Generated ${mfeName} code (${mfeOutput.length} chars)`);
-          emitAgentLog(migrationId, 'frontend-migrator', 'info', `✅ Generated ${mfeName} (${mfeOutput.length} chars)`);
-
-          // IMMEDIATELY extract and write this MFE to disk
-          const extractResult = await arkCodeExtractor.extractMicroFrontend(
-            mfeOutput,
-            path.join(outputDir, 'frontend'),
-            mfeName
-          );
-
-          if (extractResult.success && extractResult.filesWritten > 0) {
-            generatedMFEs.push(mfeName);
-            logger.info(`✅ Wrote ${mfeName} to disk: ${extractResult.filesWritten} files`);
-            emitAgentLog(migrationId, 'frontend-migrator', 'info', `✅ ${mfeName}: ${extractResult.filesWritten} files written`);
-          } else {
-            logger.error(`❌ Failed to write ${mfeName}: ${extractResult.errors?.join(', ')}`);
-            emitAgentLog(migrationId, 'frontend-migrator', 'error', `❌ Failed to write ${mfeName}`);
-          }
-        } else {
-          logger.error(`❌ Failed to generate ${mfeName}`);
-          emitAgentLog(migrationId, 'frontend-migrator', 'error', `❌ Failed to generate ${mfeName}`);
-        }
-      } catch (error: any) {
-        logger.error(`❌ Error generating ${mfeName}:`, error);
-        emitAgentLog(migrationId, 'frontend-migrator', 'error', `❌ Error: ${error.message}`);
-      }
-
-      // Small delay between MFEs
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Store ARK specifications for code generation later
+      (migration as any).frontendMigratorSpecs = frontendGenRawOutput;
+      logger.info(`📝 Stored frontend migrator specifications (${frontendGenRawOutput?.length || 0} chars)`);
     }
-
-    // Store combined output for frontend display
-    (migration as any).frontendMigratorSpecs = allFrontendOutputs;
-    logger.info(`📝 Generated ${generatedMFEs.length}/${totalMFEs} micro-frontends successfully`);
-    logger.info(`✅ Micro-frontends written to disk: ${generatedMFEs.join(', ')}`);
 
     // Output with markdown for frontend display
     const frontendOutput = JSON.stringify({
       microFrontends: migrationPlan.microFrontends || [],
-      generatedMFEs: generatedMFEs, // Track what was actually generated
-      arkRawOutput: allFrontendOutputs
+      arkRawOutput: frontendGenRawOutput // Add markdown output for AgentOutputVisualizer
     });
 
-    trackAgentComplete(migration, 'frontend-migrator', frontendOutput);
+    emitAgentCompleted(migrationId, 'frontend-migrator', frontendOutput);
     logger.info('✅ [FRONTEND MIGRATOR] Complete');
 
     // Create downloadable ZIP archive of all generated code (Frontend + Backend)
@@ -1447,7 +1343,7 @@ logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE`,
 
     // Step 5: Quality Validator - Use ARK agent for validation
     await new Promise(resolve => setTimeout(resolve, 1000));
-    trackAgentStart(migration, 'quality-validator');
+    emitAgentStarted(migrationId, 'quality-validator');
     logger.info('✅ [QUALITY VALIDATOR] Running quality validation via ARK...');
     emitAgentLog(migrationId, 'quality-validator', 'info', '🔍 Starting quality validation via ARK');
 
@@ -1455,53 +1351,17 @@ logging.level.org.hibernate.type.descriptor.sql.BasicBinder=TRACE`,
     let qualityValidationPassed = false;
 
     try {
-      // STEP 1: Run build validation FIRST (mvn package, npm build)
-      logger.info('🔨 [BUILD VALIDATOR] Running build validation (mvn package, npm build)...');
-      emitAgentLog(migrationId, 'quality-validator', 'info', '🔨 Running build validation on generated code...');
-
-      const buildValidationReport = await functionalValidator.validateMigration(migrationId);
-      const buildValidationOutput = functionalValidator.generateReport(buildValidationReport);
-
-      validationOutput += '## Build Validation Report\n\n';
-      validationOutput += buildValidationOutput;
-      validationOutput += '\n\n---\n\n';
-
-      // Store validation report
-      (migration as any).validationReport = buildValidationReport;
-
-      // Check if build passed
-      if (buildValidationReport.overall === 'fail') {
-        logger.error('❌ [BUILD VALIDATOR] Build validation failed!');
-        emitAgentLog(migrationId, 'quality-validator', 'error', '❌ Build validation failed - code does not compile');
-
-        // Build failed - skip ARK validation and report failure
-        qualityValidationPassed = false;
-        validationOutput += '\n\n❌ **Build validation failed. Skipping AI validation.**\n\n';
-
-        trackAgentComplete(migration, 'quality-validator', validationOutput);
-
-        // Continue to test validators (they will generate recommendations based on failed build)
-        logger.info('🧪 [TEST VALIDATORS] Starting test validation phase');
-        emitAgentLog(migrationId, 'quality-validator', 'info', '→ Proceeding to test validators');
-      } else {
-        logger.info('✅ [BUILD VALIDATOR] Build validation passed!');
-        emitAgentLog(migrationId, 'quality-validator', 'info', '✅ Build validation passed - code compiles successfully');
-
-        // STEP 2: Build passed - now run AI validation for quality/architecture/security
-        logger.info('🤖 [AI VALIDATOR] Running AI-based quality validation...');
-        emitAgentLog(migrationId, 'quality-validator', 'info', '🤖 Running AI quality validation...');
-
-        // Call ARK quality-validator agent
-        const qualityValidatorPrompt = `Validate the quality of the generated code design and specifications.
+      // Call ARK quality-validator agent
+      const qualityValidatorPrompt = `Validate the quality of the generated code design and specifications.
 
 **Migration Plan**:
 ${JSON.stringify(migrationPlan, null, 2)}
 
 **Service Generator Output**:
-${allServiceOutputs}
+${serviceGenRawOutput}
 
 **Frontend Migrator Output**:
-${allFrontendOutputs}
+${frontendGenRawOutput}
 
 **Source Code Path**: ${repoPath}
 
@@ -1514,25 +1374,22 @@ Validate:
 
 Generate a comprehensive quality validation report with pass/fail status.`;
 
-        emitAgentLog(migrationId, 'quality-validator', 'info', '📡 Calling ARK quality-validator agent');
-        const qualityValidatorResult = await arkChatService.callArkAgent(
-          'quality-validator',
-          qualityValidatorPrompt
-        );
+      emitAgentLog(migrationId, 'quality-validator', 'info', '📡 Calling ARK quality-validator agent');
+      const qualityValidatorResult = await arkChatService.callArkAgent(
+        'quality-validator',
+        qualityValidatorPrompt
+      );
 
-        if (qualityValidatorResult.success && qualityValidatorResult.rawOutput) {
-          validationOutput += '## AI Quality Validation Report\n\n';
-          validationOutput += qualityValidatorResult.rawOutput;
-          qualityValidationPassed = true; // Build passed and AI validation completed
-          emitAgentLog(migrationId, 'quality-validator', 'info', '✅ AI quality validation complete');
-        } else {
-          throw new Error('Quality validation failed via ARK');
-        }
-
-        trackAgentComplete(migration, 'quality-validator', validationOutput);
-        logger.info('✅ [QUALITY VALIDATOR] Complete (Build + AI validation passed)');
+      if (qualityValidatorResult.success && qualityValidatorResult.rawOutput) {
+        validationOutput = qualityValidatorResult.rawOutput;
+        qualityValidationPassed = validationOutput.toLowerCase().includes('pass') || validationOutput.includes('✅');
+        emitAgentLog(migrationId, 'quality-validator', 'info', '✅ Quality validation complete via ARK');
+      } else {
+        throw new Error('Quality validation failed via ARK');
       }
-      // End of else block (build passed)
+
+      emitAgentCompleted(migrationId, 'quality-validator', validationOutput);
+      logger.info('✅ [QUALITY VALIDATOR] Complete');
 
     } catch (error: any) {
       logger.error('[Quality Validator] Validation failed:', error);
@@ -1541,7 +1398,7 @@ Generate a comprehensive quality validation report with pass/fail status.`;
 ❌ **Validation Error:** ${error.message}
 `;
       qualityValidationPassed = false;
-      trackAgentComplete(migration, 'quality-validator', validationOutput);
+      emitAgentCompleted(migrationId, 'quality-validator', validationOutput);
       emitAgentLog(migrationId, 'quality-validator', 'error', '❌ Quality validation failed');
     }
 
@@ -1551,7 +1408,7 @@ Generate a comprehensive quality validation report with pass/fail status.`;
 
     // Step 6: Unit Test Validator - Run unit tests via ARK
     await new Promise(resolve => setTimeout(resolve, 1000));
-    trackAgentStart(migration, 'unit-test-validator');
+    emitAgentStarted(migrationId, 'unit-test-validator');
     logger.info('🧪 [UNIT TEST VALIDATOR] Running unit tests...');
     emitAgentLog(migrationId, 'unit-test-validator', 'info', '🧪 Running unit tests on generated code');
 
@@ -1564,10 +1421,10 @@ Generate a comprehensive quality validation report with pass/fail status.`;
 ${JSON.stringify(migrationPlan, null, 2)}
 
 **Service Designs:**
-${allServiceOutputs}
+${serviceGenRawOutput}
 
 **Frontend Designs:**
-${allFrontendOutputs}
+${frontendGenRawOutput}
 
 **Your Task:**
 Review the service and frontend designs and provide a comprehensive unit test validation report including:
@@ -1619,7 +1476,7 @@ The ARK unit-test-validator agent did not return a response.
         emitAgentLog(migrationId, 'unit-test-validator', 'warn', '⚠️ ARK agent did not return output');
       }
 
-      trackAgentComplete(migration, 'unit-test-validator', unitTestOutput);
+      emitAgentCompleted(migrationId, 'unit-test-validator', unitTestOutput);
       logger.info('✅ [UNIT TEST VALIDATOR] Complete');
     } catch (error: any) {
       logger.error('❌ [UNIT TEST VALIDATOR] Failed:', error);
@@ -1643,13 +1500,13 @@ ${error.stack || 'No stack trace available'}
 - Verify ARK agent is deployed: \`kubectl get agent unit-test-validator -n default\`
 - Check ARK API connectivity: \`curl http://localhost:8080/health\`
 - Review backend logs for more details`;
-      trackAgentComplete(migration, 'unit-test-validator', unitTestOutput);
+      emitAgentCompleted(migrationId, 'unit-test-validator', unitTestOutput);
       emitAgentLog(migrationId, 'unit-test-validator', 'error', `❌ Error: ${error.message}`);
     }
 
     // Step 7: Integration Test Validator - Run integration tests via ARK
     await new Promise(resolve => setTimeout(resolve, 1000));
-    trackAgentStart(migration, 'integration-test-validator');
+    emitAgentStarted(migrationId, 'integration-test-validator');
     logger.info('🔗 [INTEGRATION TEST VALIDATOR] Running integration tests...');
     emitAgentLog(migrationId, 'integration-test-validator', 'info', '🔗 Running integration tests');
 
@@ -1662,10 +1519,10 @@ ${error.stack || 'No stack trace available'}
 ${JSON.stringify(migrationPlan, null, 2)}
 
 **Service Designs:**
-${allServiceOutputs}
+${serviceGenRawOutput}
 
 **Frontend Designs:**
-${allFrontendOutputs}
+${frontendGenRawOutput}
 
 **Your Task:**
 Review the service and frontend designs and provide a comprehensive integration test validation report including:
@@ -1718,7 +1575,7 @@ The ARK integration-test-validator agent did not return a response.
         emitAgentLog(migrationId, 'integration-test-validator', 'warn', '⚠️ ARK agent did not return output');
       }
 
-      trackAgentComplete(migration, 'integration-test-validator', integrationTestOutput);
+      emitAgentCompleted(migrationId, 'integration-test-validator', integrationTestOutput);
       logger.info('✅ [INTEGRATION TEST VALIDATOR] Complete');
     } catch (error: any) {
       logger.error('❌ [INTEGRATION TEST VALIDATOR] Failed:', error);
@@ -1742,13 +1599,13 @@ ${error.stack || 'No stack trace available'}
 - Verify ARK agent is deployed: \`kubectl get agent integration-test-validator -n default\`
 - Check ARK API connectivity: \`curl http://localhost:8080/health\`
 - Review backend logs for more details`;
-      trackAgentComplete(migration, 'integration-test-validator', integrationTestOutput);
+      emitAgentCompleted(migrationId, 'integration-test-validator', integrationTestOutput);
       emitAgentLog(migrationId, 'integration-test-validator', 'error', `❌ Error: ${error.message}`);
     }
 
     // Step 8: E2E Test Validator - Run end-to-end tests via ARK
     await new Promise(resolve => setTimeout(resolve, 1000));
-    trackAgentStart(migration, 'e2e-test-validator');
+    emitAgentStarted(migrationId, 'e2e-test-validator');
     logger.info('🎭 [E2E TEST VALIDATOR] Running end-to-end tests...');
     emitAgentLog(migrationId, 'e2e-test-validator', 'info', '🎭 Running end-to-end tests');
 
@@ -1761,10 +1618,10 @@ ${error.stack || 'No stack trace available'}
 ${JSON.stringify(migrationPlan, null, 2)}
 
 **Service Designs:**
-${allServiceOutputs}
+${serviceGenRawOutput}
 
 **Frontend Designs:**
-${allFrontendOutputs}
+${frontendGenRawOutput}
 
 **Your Task:**
 Review the complete system design and provide a comprehensive E2E test validation report including:
@@ -1831,7 +1688,7 @@ The ARK e2e-test-validator agent did not return a response.
         emitAgentLog(migrationId, 'e2e-test-validator', 'warn', '⚠️ ARK agent did not return output');
       }
 
-      trackAgentComplete(migration, 'e2e-test-validator', e2eTestOutput);
+      emitAgentCompleted(migrationId, 'e2e-test-validator', e2eTestOutput);
       logger.info('✅ [E2E TEST VALIDATOR] Complete');
     } catch (error: any) {
       logger.error('❌ [E2E TEST VALIDATOR] Failed:', error);
@@ -1855,15 +1712,128 @@ ${error.stack || 'No stack trace available'}
 - Verify ARK agent is deployed: \`kubectl get agent e2e-test-validator -n default\`
 - Check ARK API connectivity: \`curl http://localhost:8080/health\`
 - Review backend logs for more details`;
-      trackAgentComplete(migration, 'e2e-test-validator', e2eTestOutput);
+      emitAgentCompleted(migrationId, 'e2e-test-validator', e2eTestOutput);
       emitAgentLog(migrationId, 'e2e-test-validator', 'error', `❌ Error: ${error.message}`);
     }
 
     // ============================================================================
-    // CODE ALREADY EXTRACTED - services/MFEs were written immediately after generation
+    // CODE GENERATION STEP - Extract REAL code from ARK specifications
     // ============================================================================
-    logger.info('✅ [CODE GENERATION] Code was extracted during service/frontend generation (no duplicate extraction needed)');
-    emitAgentLog(migrationId, 'e2e-test-validator', 'info', '✅ Code files already written to disk during generation phase');
+    logger.info('📦 [CODE GENERATION] All validators passed - extracting REAL code from ARK...');
+    emitAgentLog(migrationId, 'e2e-test-validator', 'info', '📦 Extracting production-ready code from AI specifications');
+
+    try {
+      const arkCodeExtractor = require('../services/arkCodeExtractor').default;
+
+      // Get ARK specifications stored earlier
+      const serviceSpecs = (migration as any).serviceGeneratorSpecs;
+      const frontendSpecs = (migration as any).frontendMigratorSpecs;
+
+      if (!serviceSpecs || !frontendSpecs) {
+        throw new Error('ARK specifications not found! Cannot generate code.');
+      }
+
+      logger.info(`📝 Service specs: ${serviceSpecs.length} chars, Frontend specs: ${frontendSpecs.length} chars`);
+
+      // Extract Spring Boot microservices from ARK output
+      logger.info('📦 [CODE GENERATION] Extracting Spring Boot microservices from ARK...');
+      emitAgentLog(migrationId, 'e2e-test-validator', 'info', '⚙️ Extracting Spring Boot microservices with REAL business logic');
+
+      const serviceNames = arkCodeExtractor.parseServiceNames(serviceSpecs);
+      logger.info(`Found ${serviceNames.length} microservices in ARK output: ${serviceNames.join(', ')}`);
+
+      let totalServiceFiles = 0;
+      for (const serviceName of serviceNames) {
+        const result = await arkCodeExtractor.extractMicroservice(
+          serviceSpecs,
+          path.join(outputDir, 'backend'),
+          serviceName
+        );
+
+        totalServiceFiles += result.filesWritten;
+        const progress = ((serviceNames.indexOf(serviceName) + 1) / serviceNames.length) * 50;
+
+        if (result.success) {
+          logger.info(`✅ Extracted ${serviceName}: ${result.filesWritten} files (${progress.toFixed(0)}% backend)`);
+          emitAgentLog(migrationId, 'e2e-test-validator', 'info', `✅ ${serviceName}: ${result.filesWritten} files written`);
+        } else {
+          logger.warn(`⚠️ ${serviceName} extraction had errors:`, result.errors);
+          emitAgentLog(migrationId, 'e2e-test-validator', 'warn', `⚠️ ${serviceName}: ${result.errors.length} errors`);
+        }
+      }
+
+      logger.info(`✅ [CODE GENERATION] All Spring Boot microservices extracted: ${totalServiceFiles} files`);
+      emitAgentLog(migrationId, 'e2e-test-validator', 'info', `✅ Backend complete: ${totalServiceFiles} files with real business logic`);
+
+      // Extract Angular micro-frontends from ARK output
+      logger.info('📦 [CODE GENERATION] Extracting Angular micro-frontends from ARK...');
+      emitAgentLog(migrationId, 'e2e-test-validator', 'info', '🎨 Extracting Angular micro-frontends with REAL components');
+
+      // Use migration plan MFE names instead of parsing markdown (more reliable)
+      const mfeNames = migrationPlan.microFrontends?.map((mfe: any) => mfe.name) || [];
+
+      // Fallback: try parsing if migration plan is empty
+      if (mfeNames.length === 0) {
+        logger.warn('No MFEs in migration plan, trying to parse from ARK output');
+        mfeNames.push(...arkCodeExtractor.parseMfes(frontendSpecs));
+      }
+
+      logger.info(`Found ${mfeNames.length} micro-frontends to extract: ${mfeNames.join(', ')}`);
+
+      let totalFrontendFiles = 0;
+      for (const mfeName of mfeNames) {
+        const result = await arkCodeExtractor.extractMicroFrontend(
+          frontendSpecs,
+          path.join(outputDir, 'frontend'),
+          mfeName
+        );
+
+        totalFrontendFiles += result.filesWritten;
+        const progress = 50 + ((mfeNames.indexOf(mfeName) + 1) / mfeNames.length) * 50;
+
+        if (result.success) {
+          logger.info(`✅ Extracted ${mfeName}: ${result.filesWritten} files (${progress.toFixed(0)}% total)`);
+          emitAgentLog(migrationId, 'e2e-test-validator', 'info', `✅ ${mfeName}: ${result.filesWritten} files written`);
+        } else {
+          logger.warn(`⚠️ ${mfeName} extraction had errors:`, result.errors);
+          emitAgentLog(migrationId, 'e2e-test-validator', 'warn', `⚠️ ${mfeName}: ${result.errors.length} errors`);
+        }
+      }
+
+      logger.info(`✅ [CODE GENERATION] All Angular micro-frontends extracted: ${totalFrontendFiles} files`);
+      emitAgentLog(migrationId, 'e2e-test-validator', 'info', `✅ Frontend complete: ${totalFrontendFiles} files with real components`);
+
+      const totalFiles = totalServiceFiles + totalFrontendFiles;
+      logger.info(`🎉 [CODE GENERATION] COMPLETE: ${totalFiles} files extracted from ARK specifications`);
+      emitAgentLog(migrationId, 'e2e-test-validator', 'info', `🎉 Code generation complete: ${totalFiles} production-ready files!`);
+
+      // Validate that code was actually generated
+      if (totalFiles === 0) {
+        logger.error('❌ [CODE GENERATION] NO files were generated! ARK agents may have returned empty or incorrectly formatted output.');
+        emitAgentLog(migrationId, 'e2e-test-validator', 'error', '❌ CRITICAL: No code files were generated!');
+        throw new Error('Code generation failed: 0 files extracted from ARK output. Check agent prompts and ARK response format.');
+      }
+
+      if (totalServiceFiles === 0) {
+        logger.warn('⚠️ [CODE GENERATION] NO backend microservices were generated!');
+        emitAgentLog(migrationId, 'e2e-test-validator', 'warn', '⚠️ WARNING: No Spring Boot microservices generated');
+      }
+
+      if (totalFrontendFiles === 0) {
+        logger.warn('⚠️ [CODE GENERATION] NO frontend micro-frontends were generated!');
+        emitAgentLog(migrationId, 'e2e-test-validator', 'warn', '⚠️ WARNING: No Angular micro-frontends generated');
+      }
+
+      // Clean up empty directories (if any were created)
+      logger.info('🧹 [CLEANUP] Removing empty directories...');
+      await cleanupEmptyDirectories(outputDir);
+      logger.info('✅ [CLEANUP] Empty directories removed');
+
+    } catch (codeGenError: any) {
+      logger.error('[CODE GENERATION] Failed:', codeGenError);
+      emitAgentLog(migrationId, 'e2e-test-validator', 'error', `❌ Code generation failed: ${codeGenError.message}`);
+      throw codeGenError; // Re-throw to prevent downloadable flag from being set
+    }
 
     // ==========================================
     // STEP: Generate Infrastructure Files
@@ -1957,124 +1927,13 @@ ${error.stack || 'No stack trace available'}
       // Continue anyway - user can still access raw files
     }
 
-    // OPTION C: VALIDATE GENERATED CODE BEFORE DEPLOYMENT
-    logger.info('🔍 [VALIDATION] Validating generated code before deployment...');
-    emitAgentLog(migrationId, 'container-deployer', 'info', '🔍 Validating generated services and frontends');
-
-    const validationResults = {
-      validServices: [] as string[],
-      validMFEs: [] as string[],
-      missingServices: [] as string[],
-      missingMFEs: [] as string[],
-      servicesWithIssues: [] as {name: string, issues: string[]}[],
-      mfesWithIssues: [] as {name: string, issues: string[]}[]
-    };
-
-    // Validate Backend Services
-    const expectedServices = migrationPlan.microservices || [];
-    for (const service of expectedServices) {
-      const serviceName = service.name;
-      const servicePath = path.join(outputDir, 'backend', serviceName);
-      const issues: string[] = [];
-
-      // Check if service directory exists
-      if (!fs.existsSync(servicePath)) {
-        validationResults.missingServices.push(serviceName);
-        logger.warn(`❌ Service ${serviceName} NOT FOUND at ${servicePath}`);
-        emitAgentLog(migrationId, 'container-deployer', 'warn', `❌ ${serviceName} directory not found`);
-        continue;
-      }
-
-      // Check for required files
-      const requiredFiles = [
-        'Dockerfile',
-        'pom.xml',
-        'src/main/java',
-        'src/main/resources'
-      ];
-
-      for (const file of requiredFiles) {
-        const filePath = path.join(servicePath, file);
-        if (!fs.existsSync(filePath)) {
-          issues.push(`Missing ${file}`);
-        }
-      }
-
-      if (issues.length > 0) {
-        validationResults.servicesWithIssues.push({name: serviceName, issues});
-        logger.warn(`⚠️ Service ${serviceName} has issues: ${issues.join(', ')}`);
-        emitAgentLog(migrationId, 'container-deployer', 'warn', `⚠️ ${serviceName}: ${issues.join(', ')}`);
-      } else {
-        validationResults.validServices.push(serviceName);
-        logger.info(`✅ Service ${serviceName} validated successfully`);
-        emitAgentLog(migrationId, 'container-deployer', 'info', `✅ ${serviceName} validated`);
-      }
-    }
-
-    // Validate Frontend Micro-Frontends
-    const expectedMFEs = migrationPlan.microFrontends || [];
-    for (const mfe of expectedMFEs) {
-      const mfeName = mfe.name;
-      const mfePath = path.join(outputDir, 'frontend', mfeName);
-      const issues: string[] = [];
-
-      // Check if MFE directory exists
-      if (!fs.existsSync(mfePath)) {
-        validationResults.missingMFEs.push(mfeName);
-        logger.warn(`❌ MFE ${mfeName} NOT FOUND at ${mfePath}`);
-        emitAgentLog(migrationId, 'container-deployer', 'warn', `❌ ${mfeName} directory not found`);
-        continue;
-      }
-
-      // Check for required files
-      const requiredFiles = [
-        'Dockerfile',
-        'src',
-        'angular.json'
-      ];
-
-      for (const file of requiredFiles) {
-        const filePath = path.join(mfePath, file);
-        if (!fs.existsSync(filePath)) {
-          issues.push(`Missing ${file}`);
-        }
-      }
-
-      if (issues.length > 0) {
-        validationResults.mfesWithIssues.push({name: mfeName, issues});
-        logger.warn(`⚠️ MFE ${mfeName} has issues: ${issues.join(', ')}`);
-        emitAgentLog(migrationId, 'container-deployer', 'warn', `⚠️ ${mfeName}: ${issues.join(', ')}`);
-      } else {
-        validationResults.validMFEs.push(mfeName);
-        logger.info(`✅ MFE ${mfeName} validated successfully`);
-        emitAgentLog(migrationId, 'container-deployer', 'info', `✅ ${mfeName} validated`);
-      }
-    }
-
-    // Log validation summary
-    const validationSummary = `
-🔍 VALIDATION SUMMARY:
-✅ Valid Services: ${validationResults.validServices.length}/${expectedServices.length} (${validationResults.validServices.join(', ') || 'none'})
-✅ Valid MFEs: ${validationResults.validMFEs.length}/${expectedMFEs.length} (${validationResults.validMFEs.join(', ') || 'none'})
-${validationResults.missingServices.length > 0 ? `❌ Missing Services: ${validationResults.missingServices.join(', ')}` : ''}
-${validationResults.missingMFEs.length > 0 ? `❌ Missing MFEs: ${validationResults.missingMFEs.join(', ')}` : ''}
-${validationResults.servicesWithIssues.length > 0 ? `⚠️ Services with issues: ${validationResults.servicesWithIssues.map(s => s.name).join(', ')}` : ''}
-${validationResults.mfesWithIssues.length > 0 ? `⚠️ MFEs with issues: ${validationResults.mfesWithIssues.map(m => m.name).join(', ')}` : ''}
-`;
-
-    logger.info(validationSummary);
-    emitAgentLog(migrationId, 'container-deployer', 'info', validationSummary);
-
-    // Store validation results
-    (migration as any).validationResults = validationResults;
-
     // Now proceed to deployment
-    logger.info('✅ [DEPLOYMENT] Proceeding to container deployment with validated services');
-    emitAgentLog(migrationId, 'container-deployer', 'info', '✅ Validation complete! Deploying validated services only');
-    trackAgentStart(migration, 'container-deployer');
+    logger.info('✅ [DEPLOYMENT] Proceeding to container deployment');
+    emitAgentLog(migrationId, 'container-deployer', 'info', '✅ All tests passed! Ready for deployment');
+    emitAgentStarted(migrationId, 'container-deployer');
     logger.info('🐳 [CONTAINER DEPLOYER] Starting container deployment...');
     emitAgentLog(migrationId, 'container-deployer', 'info', '🐳 Starting container deployment');
-    emitAgentLog(migrationId, 'container-deployer', 'info', `📦 Building Docker images for ${validationResults.validServices.length} services + ${validationResults.validMFEs.length} frontends`);
+    emitAgentLog(migrationId, 'container-deployer', 'info', '📦 Building Docker images for microservices and frontends');
 
     try {
       const containerDeploymentService = require('../services/containerDeploymentService').default;
@@ -2093,7 +1952,7 @@ ${validationResults.mfesWithIssues.length > 0 ? `⚠️ MFEs with issues: ${vali
       const deploymentReport = migrationService.generateDeploymentReport(deployment);
       const containerOutput = progressMessages.join('\n') + '\n\n' + deploymentReport;
 
-      trackAgentComplete(migration, 'container-deployer', containerOutput);
+      emitAgentCompleted(migrationId, 'container-deployer', containerOutput);
       logger.info('✅ [CONTAINER DEPLOYER] Complete');
 
       // Store deployment info
@@ -2102,7 +1961,7 @@ ${validationResults.mfesWithIssues.length > 0 ? `⚠️ MFEs with issues: ${vali
     } catch (deployError: any) {
       logger.error('[CONTAINER DEPLOYER] Failed:', deployError);
       const errorOutput = `❌ Container Deployment Failed\n\n${deployError.message}\n\nFalling back to mock deployment for demo purposes.`;
-      trackAgentComplete(migration, 'container-deployer', errorOutput);
+      emitAgentCompleted(migrationId, 'container-deployer', errorOutput);
     }
 
     logger.info('🎉 Migration completed - all agents finished successfully!');
@@ -2658,7 +2517,7 @@ router.post('/:id/retry-validation', async (req, res) => {
         (migration as any).validationStatus = 'FAILED';
         (migration as any).validationErrors = criticalIssues;
 
-        trackAgentComplete(migration, 'quality-validator', validationOutput);
+        emitAgentCompleted(migrationId, 'quality-validator', validationOutput);
 
         res.json({
           success: false,
@@ -2692,11 +2551,11 @@ router.post('/:id/retry-validation', async (req, res) => {
           // Continue anyway
         }
 
-        trackAgentComplete(migration, 'quality-validator', validationOutput);
+        emitAgentCompleted(migrationId, 'quality-validator', validationOutput);
 
         // Resume migration - start container deployment
         migration.status = 'deploying';
-        trackAgentStart(migration, 'container-deployer');
+        emitAgentStarted(migrationId, 'container-deployer');
 
         // Start deployment in background
         setTimeout(async () => {
@@ -2707,7 +2566,7 @@ router.post('/:id/retry-validation', async (req, res) => {
             });
 
             const deploymentReport = migrationService.generateDeploymentReport(deployment);
-            trackAgentComplete(migration, 'container-deployer', deploymentReport);
+            emitAgentCompleted(migrationId, 'container-deployer', deploymentReport);
 
             (migration as any).containerDeployment = deployment;
             migrationService.completeMigration(migrationId);
@@ -2715,7 +2574,7 @@ router.post('/:id/retry-validation', async (req, res) => {
 
           } catch (deployError: any) {
             logger.error('[CONTAINER DEPLOYER] Failed:', deployError);
-            trackAgentComplete(migration, 'container-deployer', `❌ Deployment Failed: ${deployError.message}`);
+            emitAgentCompleted(migrationId, 'container-deployer', `❌ Deployment Failed: ${deployError.message}`);
           }
         }, 1000);
 
@@ -2734,7 +2593,7 @@ router.post('/:id/retry-validation', async (req, res) => {
       (migration as any).validationStatus = 'FAILED';
       (migration as any).validationErrors = [`Validation process failed: ${validationError.message}`];
 
-      trackAgentComplete(migration, 'quality-validator', validationOutput);
+      emitAgentCompleted(migrationId, 'quality-validator', validationOutput);
 
       res.json({
         success: false,

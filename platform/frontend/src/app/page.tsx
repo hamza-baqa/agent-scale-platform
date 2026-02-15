@@ -55,6 +55,12 @@ export default function HomePage() {
             </div>
             <nav className="flex items-center gap-2">
               <button
+                onClick={() => router.push('/migrations')}
+                className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 hover:bg-slate-100 h-10 px-4 py-2 gap-2"
+              >
+                📋 View All Migrations
+              </button>
+              <button
                 onClick={() => router.push('/activity')}
                 className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 hover:bg-slate-100 h-10 px-4 py-2 gap-2"
               >

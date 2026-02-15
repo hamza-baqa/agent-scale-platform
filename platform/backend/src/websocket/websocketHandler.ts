@@ -79,6 +79,20 @@ export const emitAgentCompleted = (migrationId: string, agent: string, output?: 
 };
 
 /**
+ * Emit agent reset event (status reset to pending for retry)
+ */
+export const emitAgentReset = (migrationId: string, agent: string) => {
+  if (ioInstance) {
+    ioInstance.to(`migration-${migrationId}`).emit('agent-reset', {
+      migrationId,
+      agent,
+      timestamp: new Date().toISOString()
+    });
+    logger.info(`Emitted agent-reset event`, { migrationId, agent });
+  }
+};
+
+/**
  * Emit migration completed event
  */
 export const emitMigrationCompleted = (migrationId: string) => {
@@ -173,5 +187,106 @@ export const emitAgentLog = (
     });
   } else {
     logger.warn(`⚠️ Cannot emit agent-log - ioInstance is null`);
+  }
+};
+
+/**
+ * Emit retry loop started event
+ */
+export const emitRetryLoopStarted = (
+  migrationId: string,
+  attempt: number,
+  maxRetries: number,
+  totalErrors: number
+) => {
+  if (ioInstance) {
+    ioInstance.to(`migration-${migrationId}`).emit('retry-loop-started', {
+      migrationId,
+      attempt,
+      maxRetries,
+      totalErrors,
+      timestamp: new Date().toISOString()
+    });
+    logger.info(`Emitted retry-loop-started event`, { migrationId, attempt, totalErrors });
+  }
+};
+
+/**
+ * Emit retry loop progress event
+ */
+export const emitRetryLoopProgress = (
+  migrationId: string,
+  attempt: number,
+  phase: 'analyzing' | 'improving-plan' | 'regenerating' | 'validating',
+  message: string,
+  data?: any
+) => {
+  if (ioInstance) {
+    ioInstance.to(`migration-${migrationId}`).emit('retry-loop-progress', {
+      migrationId,
+      attempt,
+      phase,
+      message,
+      data,
+      timestamp: new Date().toISOString()
+    });
+    logger.info(`Emitted retry-loop-progress event`, { migrationId, attempt, phase });
+  }
+};
+
+/**
+ * Emit retry loop iteration completed event
+ */
+export const emitRetryLoopIterationCompleted = (
+  migrationId: string,
+  attempt: number,
+  errorsRemaining: number,
+  errorsFixed: number
+) => {
+  if (ioInstance) {
+    ioInstance.to(`migration-${migrationId}`).emit('retry-loop-iteration-completed', {
+      migrationId,
+      attempt,
+      errorsRemaining,
+      errorsFixed,
+      timestamp: new Date().toISOString()
+    });
+    logger.info(`Emitted retry-loop-iteration-completed event`, { migrationId, attempt, errorsRemaining });
+  }
+};
+
+/**
+ * Emit retry loop success event (0 errors)
+ */
+export const emitRetryLoopSuccess = (
+  migrationId: string,
+  totalAttempts: number
+) => {
+  if (ioInstance) {
+    ioInstance.to(`migration-${migrationId}`).emit('retry-loop-success', {
+      migrationId,
+      totalAttempts,
+      timestamp: new Date().toISOString()
+    });
+    logger.info(`Emitted retry-loop-success event`, { migrationId, totalAttempts });
+  }
+};
+
+/**
+ * Emit retry loop failed event (max retries reached)
+ */
+export const emitRetryLoopFailed = (
+  migrationId: string,
+  totalAttempts: number,
+  errorsRemaining: number
+) => {
+  if (ioInstance) {
+    ioInstance.to(`migration-${migrationId}`).emit('retry-loop-failed', {
+      migrationId,
+      totalAttempts,
+      errorsRemaining,
+      timestamp: new Date().toISOString()
+    });
+    logger.error(`Emitted retry-loop-failed event`, { migrationId, totalAttempts, errorsRemaining });
   }
 };

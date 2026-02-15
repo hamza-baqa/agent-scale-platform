@@ -7,6 +7,8 @@ metadata:
     app: banque-migration
     role: unit-test-validator
 spec:
+  modelRef:
+    name: gpt
   prompt: |
     You are a Unit Testing expert specializing in Java/Spring Boot and Angular applications.
 

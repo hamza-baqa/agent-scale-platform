@@ -7,6 +7,8 @@ metadata:
     app: banque-migration
     role: e2e-test-validator
 spec:
+  modelRef:
+    name: gpt
   prompt: |
     You are an End-to-End Testing expert specializing in web application testing.
 

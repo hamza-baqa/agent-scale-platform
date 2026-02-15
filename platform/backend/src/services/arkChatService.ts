@@ -693,7 +693,7 @@ class ArkChatService {
           }
         },
         {
-          timeout: 300000, // 5 minute timeout for large codebases
+          timeout: 600000, // 10 minutes (increased for complex operations)
           headers: {
             'Content-Type': 'application/json'
           }
@@ -749,10 +749,6 @@ class ArkChatService {
    * Returns minimal structure with counts for compatibility with the rest of the system
    */
   private parseMarkdownAnalysis(markdown: string): any {
-    // Extract basic counts from markdown sections
-    const entityMatches = markdown.match(/###?\s+([A-Z][a-zA-Z]+(?:Entity)?)/g) || [];
-    const endpointMatches = markdown.match(/(?:GET|POST|PUT|DELETE|PATCH)\s+\/[^\s]+/g) || [];
-
     // Try to detect framework
     let framework = 'Unknown';
     if (markdown.includes('Spring Boot') || markdown.includes('@RestController')) {
@@ -765,26 +761,113 @@ class ArkChatService {
       framework = 'Blazor';
     }
 
-    // Extract entity names from markdown headers
-    const entities = Array.from(new Set(entityMatches))
+    // Extract entities from various markdown formats
+    // Format 1: **1. BaseEntity**, **2. NamedEntity**, **3. Owner** (Extends Person)
+    // Format 2: 1. **`Utilisateur`** - Represents system users.
+    // Format 3: 1. **Client**: - Stores customer data...
+    // Format 4 (Table): Only extract from Domain Model/JPA Entities sections
+    const format1Matches = markdown.match(/\*\*\d+\.\s+([A-Z][a-zA-Z]+)\*\*(?:\s+\(Extends\s+([A-Z][a-zA-Z]+)\))?/g) || [];
+    const format2Matches = markdown.match(/\d+\.\s+\*\*`([A-Z][a-zA-Z]+)`\*\*/g) || [];
+    const format3Matches = markdown.match(/\d+\.\s+\*\*([A-Z][a-zA-Z]+)\*\*:/g) || [];
+
+    // Format 4: Table format - extract ONLY from Domain Model section
+    // Find the Domain Model section (including nested headings like #### List of Entities)
+    // Strategy: Find "Domain Model" or "JPA Entities" heading, then extract until next ### (same level)
+    const domainModelMatch = markdown.match(/###\s+(?:\*\*)?(?:\d+\.)?\s*(?:Domain Model|JPA Entities)(?:\*\*)?\s*([\s\S]*?)(?=\n###\s+(?:\*\*)?(?:\d+\.)?|$)/i);
+    let tableMatches: string[] = [];
+
+    if (domainModelMatch) {
+      const domainModelSection = domainModelMatch[1];
+      // Extract table rows, then get ONLY the first cell (entity name)
+      // Match: | EntityName | (anything) | (anything) |
+      const tableRows = domainModelSection.match(/^\|\s*\*?\*?`?([A-Z][a-zA-Z]+)`?\*?\*?\s*\|[^\n]+$/gm) || [];
+
+      // Extract only the entity name from the first column
+      tableMatches = tableRows.map(row => {
+        const firstCellMatch = row.match(/^\|\s*(\*?\*?`?[A-Z][a-zA-Z]+`?\*?\*?)\s*\|/);
+        return firstCellMatch ? firstCellMatch[1] : '';
+      }).filter(s => s);
+    }
+
+    // Combine all formats and remove duplicates
+    const jpaEntityMatches = [...format1Matches, ...format2Matches, ...format3Matches, ...tableMatches];
+
+    const entities = Array.from(new Set(jpaEntityMatches))
       .map(match => {
-        const name = match.replace(/^###?\s+/, '').trim();
+        // Extract entity name from any format:
+        // Format 1: "**4. Owner** (Extends Person)"
+        // Format 2: "4. **`Utilisateur`** - Represents..."
+        // Format 3: "4. **Client**: - Stores..."
+        // Format 4: "| **Client** | properties |" or "| Client | properties |"
+        let nameMatch = match.match(/\*\*\d+\.\s+([A-Z][a-zA-Z]+)\*\*/);
+        if (!nameMatch) {
+          nameMatch = match.match(/\d+\.\s+\*\*`([A-Z][a-zA-Z]+)`\*\*/);
+        }
+        if (!nameMatch) {
+          nameMatch = match.match(/\d+\.\s+\*\*([A-Z][a-zA-Z]+)\*\*:/);
+        }
+        if (!nameMatch) {
+          // Table format: | **EntityName** | or | `EntityName` | or | EntityName |
+          nameMatch = match.match(/\|\s*\*?\*?`?([A-Z][a-zA-Z]+)`?\*?\*?\s*\|/);
+        }
+
+        const extendsMatch = match.match(/\(Extends\s+([A-Z][a-zA-Z]+)\)/);
+
+        if (!nameMatch) return null;
+
+        const name = nameMatch[1];
+
+        // Filter out common non-entity words (table headers, etc.)
+        const excludeList = ['Entity', 'Properties', 'Purpose', 'Description', 'Business', 'Overview', 'Name'];
+        if (excludeList.includes(name)) return null;
+
+        const parentClass = extendsMatch ? extendsMatch[1] : null;
+
+        // Try to find properties for this entity in the markdown
+        // Look for the entity name followed by field descriptions
+        const entitySection = new RegExp(`\\*\\*${name}\\*\\*.*?(?=\\*\\*\\d+\\.|###|$)`, 's').exec(markdown);
+        const properties: any[] = [];
+
+        if (entitySection) {
+          const text = entitySection[0];
+          // Extract field lines like "  - `id` (*Integer*): Primary Key"
+          const fieldMatches = text.match(/[-•]\s+`?(\w+)`?\s+\([\*_]*([^)]+)[\*_]*\)(?::\s*([^.\n]+))?/g) || [];
+
+          fieldMatches.forEach(fieldLine => {
+            const fieldMatch = fieldLine.match(/[-•]\s+`?(\w+)`?\s+\([\*_]*([^)]+)[\*_]*\)(?::\s*([^.\n]+))?/);
+            if (fieldMatch) {
+              properties.push({
+                name: fieldMatch[1],
+                type: fieldMatch[2].replace(/\*/g, '').trim(),
+                description: fieldMatch[3]?.trim() || ''
+              });
+            }
+          });
+        }
+
         return {
           name,
           filePath: '',
-          properties: []
+          properties,
+          annotations: parentClass ? [`@Entity`, `extends ${parentClass}`] : ['@Entity']
         };
-      });
+      })
+      .filter(e => e !== null);
 
-    // Extract endpoints
+    // Extract endpoints from API Endpoints section
+    // Example: "| GET         | `/vets.html`     | `page` (QueryParam)         | HTML View (`vets/vetList`) |"
+    const endpointMatches = markdown.match(/\|\s*(GET|POST|PUT|DELETE|PATCH)\s*\|\s*`?([^`|]+)`?\s*\|/gi) || [];
+
     const endpoints = endpointMatches.map(match => {
-      const [method, path] = match.split(' ');
+      const parts = match.match(/\|\s*(GET|POST|PUT|DELETE|PATCH)\s*\|\s*`?([^`|]+)`?\s*\|/i);
+      if (!parts) return null;
+
       return {
-        method,
-        path: path || '/',
+        method: parts[1].toUpperCase(),
+        path: parts[2].trim(),
         methodName: ''
       };
-    });
+    }).filter(e => e !== null);
 
     return {
       framework,
@@ -1076,7 +1159,8 @@ class ArkChatService {
    */
   async createMigrationPlanWithARK(
     analysis: any,
-    repoPath: string
+    repoPath: string,
+    adjustedPrompt?: string
   ): Promise<{
     success: boolean;
     migrationPlan?: any;
@@ -1088,21 +1172,59 @@ class ArkChatService {
         repoPath,
         agent: 'migration-planner',
         entities: analysis.entities?.length || 0,
-        endpoints: analysis.controllers?.flatMap((c: any) => c.endpoints || []).length || 0
+        endpoints: analysis.controllers?.flatMap((c: any) => c.endpoints || []).length || 0,
+        isRetry: !!adjustedPrompt
       });
 
-      // Build comprehensive prompt for migration-planner
-      let userMessage = `**MIGRATION PLANNING REQUEST**\n\n`;
-      userMessage += `**Repository Path:** ${repoPath}\n`;
-      userMessage += `**Framework:** ${analysis.framework || 'Unknown'}\n\n`;
+      let userMessage = '';
+
+      // If adjusted prompt from retry-planner exists, USE IT INSTEAD of building default prompt
+      if (adjustedPrompt) {
+        logger.info('✅ [MIGRATION-PLANNER] Using adjusted prompt from retry-planner (REPLACES original)');
+        userMessage = adjustedPrompt;
+        // Still add code analysis summary for context
+        userMessage += `\n\n---\n## CODE ANALYSIS CONTEXT\n\n`;
+        userMessage += `**Repository Path:** ${repoPath}\n`;
+        userMessage += `**Framework:** ${analysis.framework || 'Unknown'}\n\n`;
+      } else {
+        // Build comprehensive prompt for migration-planner (first attempt)
+        userMessage = `**MIGRATION PLANNING REQUEST**\n\n`;
+        userMessage += `**Repository Path:** ${repoPath}\n`;
+        userMessage += `**Framework:** ${analysis.framework || 'Unknown'}\n\n`;
+      }
 
       // Add code analysis summary
       userMessage += `## CODE ANALYSIS RESULTS\n\n`;
 
-      // Entities
-      if (analysis.entities && analysis.entities.length > 0) {
-        userMessage += `### Domain Entities (${analysis.entities.length})\n\n`;
-        analysis.entities.forEach((entity: any) => {
+      // **NEW: Filter and provide structured JSON for entities**
+      // Filter out non-entity items (controllers, DTOs, Documentation, etc.)
+      const excludePatterns = ['Controller', 'DTO', 'Request', 'Response', 'Documentation', 'Service', 'Repository'];
+      const filteredEntities = (analysis.entities || []).filter((entity: any) => {
+        const name = entity.name || '';
+        // Exclude if name matches any exclude pattern
+        return !excludePatterns.some(pattern => name.includes(pattern));
+      });
+
+      // Add explicit JSON structure at the top (HIGHEST PRIORITY)
+      userMessage += `### ⚠️ CRITICAL: ACTUAL DOMAIN ENTITIES (USE THESE!):\n\n`;
+      userMessage += `\`\`\`json\n`;
+      userMessage += `{\n`;
+      userMessage += `  "actualEntities": [\n`;
+      filteredEntities.forEach((entity: any, index: number) => {
+        const comma = index < filteredEntities.length - 1 ? ',' : '';
+        userMessage += `    "${entity.name}"${comma}\n`;
+      });
+      userMessage += `  ]\n`;
+      userMessage += `}\n`;
+      userMessage += `\`\`\`\n\n`;
+      userMessage += `**CRITICAL**: The JSON above contains the ACTUAL domain entities found in the source code.\n`;
+      userMessage += `You MUST base your microservices decomposition on ONLY these entities!\n`;
+      userMessage += `Do NOT use generic names like "client-service" unless "Client" is in the actualEntities array above.\n\n`;
+
+      // Entities (detailed breakdown)
+      if (filteredEntities.length > 0) {
+        userMessage += `### Domain Entities - Detailed Breakdown (${filteredEntities.length})\n\n`;
+        filteredEntities.forEach((entity: any) => {
           userMessage += `**${entity.name}**\n`;
           if (entity.properties && entity.properties.length > 0) {
             userMessage += `Properties:\n`;
@@ -1179,7 +1301,7 @@ class ArkChatService {
           }
         },
         {
-          timeout: 300000, // 5 minute timeout
+          timeout: 600000, // 10 minutes (increased for complex operations)
           headers: {
             'Content-Type': 'application/json'
           }
@@ -1200,6 +1322,48 @@ class ArkChatService {
         microFrontends: migrationPlan.microFrontends?.length || 0,
         hasMarkdown: !!agentOutput
       });
+
+      // **POST-PROCESSING FIX**: Correct hallucinated service names based on actual entities
+      // This fixes the issue where migration-planner ignores prompts and hallucinates generic services
+      // Reuse the filteredEntities from earlier in the function (already filtered)
+      const excludePatternsForChecking = ['Controller', 'DTO', 'Request', 'Response', 'Documentation', 'Service', 'Repository'];
+      const entitiesForPostProcessing = (analysis.entities || []).filter((entity: any) => {
+        const name = entity.name || '';
+        return !excludePatternsForChecking.some(pattern => name.includes(pattern));
+      });
+
+      const actualEntityNames = entitiesForPostProcessing.map((e: any) => e.name.toLowerCase());
+
+      logger.info('🔧 Post-processing: Verifying service names against actual entities', {
+        actualEntities: actualEntityNames.join(', '),
+        proposedServices: (migrationPlan.microservices || []).map((s: any) => s.name).join(', ')
+      });
+
+      // If migration-planner hallucinated generic services, replace them with entity-based services
+      const genericServiceNames = ['auth-service', 'client-service', 'account-service', 'transaction-service', 'card-service'];
+      const hasGenericServices = (migrationPlan.microservices || []).some((s: any) => {
+        const baseName = s.name.replace('-service', '');
+        return genericServiceNames.includes(s.name) && !actualEntityNames.includes(baseName);
+      });
+
+      if (hasGenericServices && actualEntityNames.length > 0) {
+        logger.warn('⚠️ Detected hallucinated generic services! Fixing based on actual entities...');
+
+        // Generate services based on actual entities
+        const correctedServices = actualEntityNames.map((entityName, index) => ({
+          name: `${entityName}-service`,
+          port: 8081 + index,
+          entities: [entityName.charAt(0).toUpperCase() + entityName.slice(1)],
+          endpoints: []
+        }));
+
+        migrationPlan.microservices = correctedServices;
+
+        logger.info('✅ Fixed services based on actual entities', {
+          before: (analysis.entities || []).length + ' entities found',
+          after: correctedServices.map(s => s.name).join(', ')
+        });
+      }
 
       return {
         success: true,
@@ -1354,7 +1518,7 @@ class ArkChatService {
           }
         },
         {
-          timeout: 300000, // 5 minutes
+          timeout: 600000, // 10 minutes (increased for complex service generation)
           headers: {
             'Content-Type': 'application/json'
           }
@@ -1472,7 +1636,7 @@ class ArkChatService {
           }
         },
         {
-          timeout: 300000, // 5 minutes
+          timeout: 600000, // 10 minutes (increased for complex service generation)
           headers: {
             'Content-Type': 'application/json'
           }
@@ -1658,7 +1822,7 @@ Generate a complete Angular application following the structure defined in your 
           headers: {
             'Content-Type': 'application/json'
           },
-          timeout: 300000 // 5 minutes
+          timeout: 600000 // 10 minutes (increased for complex operations)
         }
       );
 

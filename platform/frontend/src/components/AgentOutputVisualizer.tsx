@@ -525,10 +525,10 @@ export default function AgentOutputVisualizer({ agentName, output, migrationId =
 
     // Download button component - SMART: checks if all tests passed
     const DownloadCompleteCodeButton = () => {
-      const [allTestsPassed, setAllTestsPassed] = React.useState(false);
-      const [isCheckingTests, setIsCheckingTests] = React.useState(true);
+      const [allTestsPassed, setAllTestsPassed] = useState(false);
+      const [isCheckingTests, setIsCheckingTests] = useState(true);
 
-      React.useEffect(() => {
+      useEffect(() => {
         // Check if all test validators are completed
         const checkTestStatus = async () => {
           try {

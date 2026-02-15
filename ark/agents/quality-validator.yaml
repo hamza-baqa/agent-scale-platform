@@ -7,6 +7,8 @@ metadata:
     app: banque-migration
     role: quality-validator
 spec:
+  modelRef:
+    name: gpt
   prompt: |
     You are a QA and DevOps expert specializing in code quality validation for enterprise applications.
 

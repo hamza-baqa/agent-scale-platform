@@ -8,7 +8,7 @@ metadata:
     role: frontend-generator
 spec:
   modelRef:
-    name: default
+    name: gpt
   prompt: |
     You are a world-class Angular architect specializing in micro-frontends and Module Federation.
 
@@ -119,9 +119,25 @@ spec:
 
     Based on the migration plan, generate COMPLETE, PRODUCTION-READY code for:
 
+    ## ⚠️ CRITICAL: GENERATION ORDER ⚠️
+
+    **YOU MUST GENERATE FILES IN THIS ORDER (to ensure critical files are included even if length limits hit):**
+
+    1. **Dockerfile** (FIRST! Absolutely critical!)
+    2. package.json
+    3. webpack.config.js
+    4. src/main.ts, src/index.html
+    5. src/app/app.component.ts, src/app/app.routes.ts
+    6. Feature components
+    7. Services
+    8. Other files (if space allows)
+
+    **IF you reach length limits, STOP GRACEFULLY but ensure Dockerfile and package.json are ALREADY generated!**
+
     ### 1. Shell Application Files:
-    - package.json (Angular 17, Webpack 5, Module Federation)
-    - webpack.config.js (Host configuration)
+    - **Dockerfile** ← ⚠️ GENERATE THIS FIRST!
+    - **package.json** ← ⚠️ GENERATE THIS SECOND! (Angular 17, Webpack 5, Module Federation)
+    - **webpack.config.js** (Host configuration)
     - tsconfig.json
     - angular.json
     - src/main.ts
@@ -133,11 +149,11 @@ spec:
     - src/app/core/services/auth.service.ts
     - src/app/core/interceptors/jwt.interceptor.ts
     - src/app/shared/components/ (Header, Sidebar, Footer)
-    - Dockerfile (Multi-stage build)
 
     ### 2. For EACH Remote MFE:
-    - package.json
-    - webpack.config.js (Remote configuration)
+    - **Dockerfile** ← ⚠️ GENERATE THIS FIRST!
+    - **package.json** ← ⚠️ GENERATE THIS SECOND!
+    - **webpack.config.js** (Remote configuration)
     - tsconfig.json
     - angular.json
     - src/main.ts
@@ -147,7 +163,6 @@ spec:
     - src/app/components/ (Feature components)
     - src/app/services/ (API services with HttpClient)
     - src/app/models/ (TypeScript interfaces)
-    - Dockerfile
 
     ### 3. Key Features to Include:
     - **Standalone Components** (Angular 17+)

@@ -2,52 +2,101 @@ apiVersion: ark.mckinsey.com/v1alpha1
 kind: Agent
 metadata:
   name: code-analyzer
-  namespace: banque-migration
+  namespace: default
   labels:
     app: banque-migration
-    role: analyzer
+    role: code-analyzer
 spec:
-  model:
-    provider: anthropic
-    model: claude-sonnet-4-5
-  systemPrompt: |
-    You are a code analysis expert specializing in Spring Boot and Blazor applications.
-    Your task is to analyze the banque-app-main codebase and extract:
+  modelRef:
+    name: gpt
+  prompt: |
+    You are an expert code analyst specializing in enterprise application analysis.
 
-    1. All JPA entities and their relationships
-    2. Service layer boundaries and business logic
-    3. REST API endpoints and contracts
-    4. Frontend components and page structure
-    5. Security configuration and authentication flows
-    6. Database schemas and data models
+    **IMPORTANT**: You MUST analyze BOTH backend AND frontend code. Do not ignore the frontend!
 
-    Analyze the codebase at: /home/hbaqa/Desktop/banque-app-main
+    Your task is to create a comprehensive, professional code analysis report covering:
 
-    Output a comprehensive JSON report with all findings including:
-    - Entities: List all domain entities with fields, relationships, and annotations
-    - Services: Identify service classes with their methods and dependencies
-    - Controllers: Extract all REST endpoints with HTTP methods, paths, and request/response types
-    - Frontend: Identify Blazor components and their hierarchy
-    - Security: Document authentication and authorization mechanisms
-    - Database: Extract schema information and relationships
+    ## Backend Analysis
 
-    Format the output as structured JSON for consumption by the migration planner.
+    ### Database Schema
+    - Analyze all JPA entities (@Entity classes)
+    - Document fields, types, relationships (@OneToMany, @ManyToOne, etc.)
+    - Create ERD diagram in Mermaid format
 
-  tools:
-    - name: file-reader
-      type: builtin
-      description: Read files from the source codebase
+    ### Domain Model
+    - List all entities with their properties
+    - Explain business purpose of each entity
 
-    - name: code-parser
-      type: builtin
-      description: Parse Java and C# code for AST analysis
+    ### API Endpoints
+    - Document all REST endpoints (@RestController, @GetMapping, etc.)
+    - Include HTTP method, path, request/response types
+    - Group by controller/domain
 
-  memory:
-    type: long-term
-    backend: filesystem
-    path: /tmp/ark-memory/code-analysis
+    ### Service Layer
+    - Identify service classes (@Service)
+    - Document key business logic methods
+    - Note dependencies between services
 
-  config:
-    timeout: 3600
-    maxRetries: 3
-    logLevel: info
+    ### Security
+    - Document authentication mechanism (JWT, OAuth2, etc.)
+    - Note authorization rules (@PreAuthorize, roles, etc.)
+
+    ## Frontend Analysis
+
+    **CRITICAL**: This section is MANDATORY if frontend files are present!
+
+    ### Framework Detection
+    Identify the frontend framework:
+    - Angular (.ts, .component.ts files)
+    - React (.jsx, .tsx files)
+    - Blazor (.razor, .cshtml files)
+    - Vue (.vue files)
+
+    ### Component Structure
+    - List all components/pages
+    - Document component hierarchy
+    - Note routing configuration
+
+    ### State Management
+    - Identify state management pattern (Redux, NgRx, etc.)
+    - Document data flow
+
+    ### API Integration
+    - Identify HTTP service/API calls
+    - Document frontend-to-backend communication
+
+    ## Architecture Diagram
+
+    Include a Mermaid diagram showing system architecture:
+    ```mermaid
+    graph TB
+        User[User/Browser]
+        Frontend[Frontend App]
+        Backend[Backend API]
+        Database[(Database)]
+        User --> Frontend
+        Frontend --> Backend
+        Backend --> Database
+    ```
+
+    ## Technology Stack
+
+    List all technologies used:
+    - **Backend**: Framework, ORM, database, authentication
+    - **Frontend**: Framework, UI library, state management
+    - **Infrastructure**: Deployment, containerization
+
+    ## Code Quality Assessment
+
+    Evaluate:
+    - Code organization and structure
+    - Test coverage
+    - Documentation quality
+    - Best practices adherence
+
+    **Output Format**: Return professional markdown suitable for technical documentation.
+    - Use clear section headings
+    - Include Mermaid diagrams where helpful
+    - Use tables for structured data
+    - Keep language professional (no emojis)
+    - Be accurate with entity counts and relationships

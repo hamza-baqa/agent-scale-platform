@@ -241,6 +241,46 @@ Your mission: Validate the complete user workflow from frontend to backend.
 
 Generate a comprehensive report with Error Report section listing all errors in table format.`,
   },
+  'retry-planner': {
+    title: 'Retry Planner',
+    description: 'Analyze validation errors and improve migration plan',
+    label: 'RETRY',
+    team: 'Step 2: Shape',
+    tools: ['error-analyzer', 'plan-improver', 'ark-agent', 'ai-analysis'],
+    systemPrompt: `You are an expert migration retry planner and error analysis specialist.
+
+Your mission: Analyze validation errors from all test validators and generate an improved migration plan.
+
+Input Analysis:
+1. Original migration plan (microservices + micro-frontends)
+2. Unit Test Validation Report (errors with ERR-UT-XXX codes)
+3. Integration Test Validation Report (errors with ERR-IT-XXX codes)
+4. E2E Test Validation Report (errors with ERR-E2E-XXX codes)
+5. Current retry attempt number
+
+Error Analysis Process:
+1. Categorize errors by type (build, test, config, security, code quality)
+2. Identify root causes for each error
+3. Determine if errors are related or independent
+4. Prioritize fixes by severity (CRITICAL > HIGH > MEDIUM > LOW)
+
+Improvement Strategy:
+1. For each error, provide specific fix instructions
+2. Update service generator prompts with corrections
+3. Update frontend migrator prompts with corrections
+4. Add missing dependencies, configurations, or code
+5. Ensure fixes don't introduce new errors
+
+Output Format:
+- Error Summary (total errors, breakdown by category)
+- Root Cause Analysis
+- Improvement Plan with specific fixes
+- Updated prompts for service-generator
+- Updated prompts for frontend-migrator
+- Confidence level for zero-error achievement
+
+Goal: Achieve ZERO ERRORS through intelligent iteration.`,
+  },
   'container-deployer': {
     title: 'Container Deployer',
     description: 'Deploy after quality validation passes',
@@ -274,6 +314,47 @@ Generate a comprehensive report with Error Report section listing all errors in 
    - Provide access URLs
 
 Deploy the complete application stack and provide URLs for immediate testing.`,
+  },
+  'build-validator': {
+    title: 'Build Validator',
+    description: 'Verify code builds & runs successfully',
+    label: 'BUILD & RUN',
+    team: 'Step 5: Production Ready',
+    tools: ['Docker', 'docker-compose', 'Build Validation', 'Health Checks'],
+    systemPrompt: `You are a Build Validation expert ensuring generated code is 100% production-ready.
+
+Your mission: Validate that the generated code builds successfully with Docker and runs without errors.
+
+Validation Process:
+1. Build all Docker images from generated code
+2. Run docker-compose up to start all services
+3. Check health endpoints for all services
+4. Verify database connections
+5. Test service-to-service communication
+
+Build Validation:
+- Backend: Maven builds succeed (mvn clean package)
+- Frontend: NPM builds succeed (npm run build)
+- Docker: All images build without errors
+- Compose: All services start and become healthy
+
+Runtime Validation:
+- Database connections established
+- Spring Boot actuator health checks pass
+- Angular apps serve correctly
+- API endpoints respond
+- No critical errors in logs
+
+Error Reporting:
+If build or runtime errors occur, generate a detailed error report with:
+- Error ID (ERR-BUILD-XXX)
+- Severity (CRITICAL, HIGH, MEDIUM, LOW)
+- Category (Build, Runtime, Configuration, Docker)
+- Service name
+- Error description
+- Fix recommendations
+
+Goal: Ensure ./start.sh works perfectly on first try - 100% working code guaranteed!`,
   }
 };
 
@@ -296,6 +377,29 @@ export default function DashboardPage() {
   const [restartingMigration, setRestartingMigration] = useState(false);
   const [agentLogs, setAgentLogs] = useState<AgentLog[]>([]);
   const [selectedTab, setSelectedTab] = useState<'prompt' | 'output' | 'logs'>('prompt');
+
+  // Retry Loop State
+  const [retryLoopState, setRetryLoopState] = useState<{
+    isActive: boolean;
+    currentAttempt: number;
+    maxRetries: number;
+    phase: 'analyzing' | 'improving-plan' | 'regenerating' | 'validating' | 'idle';
+    totalErrors: number;
+    errorsHistory: Array<{
+      attempt: number;
+      errors: number;
+      errorsFixed: number;
+    }>;
+    status: 'in-progress' | 'success' | 'failed' | 'idle';
+  }>({
+    isActive: false,
+    currentAttempt: 0,
+    maxRetries: 3,
+    phase: 'idle',
+    totalErrors: 0,
+    errorsHistory: [],
+    status: 'idle'
+  });
 
   const addActivity = (type: ActivityEvent['type'], agent: string | undefined, message: string, progress?: number) => {
     const event: ActivityEvent = {
@@ -434,6 +538,20 @@ export default function DashboardPage() {
       }
     };
 
+    const handleAgentReset = (data: any) => {
+      if (data.migrationId === migrationId) {
+        console.log('🔄 Agent reset to pending:', data.agent);
+        addActivity('info', data.agent, `🔄 Agent ${data.agent} reset to pending - restarting fresh`);
+        setMigration((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            progress: updateAgentProgress(prev.progress, data.agent, 'pending', ''),
+          };
+        });
+      }
+    };
+
     const handleMigrationCompleted = (data: any) => {
       if (data.migrationId === migrationId) {
         addActivity('migration-completed', undefined, '🎉 Migration completed successfully!');
@@ -491,20 +609,111 @@ export default function DashboardPage() {
       }
     };
 
+    // Retry Loop Event Handlers
+    const handleRetryLoopStarted = (data: any) => {
+      if (data.migrationId === migrationId) {
+        console.log('🔄 Retry loop started:', data);
+        setRetryLoopState(prev => ({
+          ...prev,
+          isActive: true,
+          currentAttempt: data.attempt,
+          maxRetries: data.maxRetries,
+          totalErrors: data.totalErrors,
+          status: 'in-progress',
+          phase: 'analyzing'
+        }));
+        addActivity('info', undefined, `🔄 Retry ${data.attempt}/${data.maxRetries} started - ${data.totalErrors} errors to fix`);
+      }
+    };
+
+    const handleRetryLoopProgress = (data: any) => {
+      if (data.migrationId === migrationId) {
+        console.log('📊 Retry loop progress:', data);
+        setRetryLoopState(prev => ({
+          ...prev,
+          phase: data.phase
+        }));
+        addActivity('info', undefined, data.message);
+      }
+    };
+
+    const handleRetryLoopIterationCompleted = (data: any) => {
+      if (data.migrationId === migrationId) {
+        console.log('✅ Retry iteration completed:', data);
+        setRetryLoopState(prev => ({
+          ...prev,
+          errorsHistory: [
+            ...prev.errorsHistory,
+            {
+              attempt: data.attempt,
+              errors: data.errorsRemaining,
+              errorsFixed: data.errorsFixed
+            }
+          ],
+          totalErrors: data.errorsRemaining
+        }));
+        addActivity('info', undefined, `✅ Retry ${data.attempt} complete - ${data.errorsRemaining} errors remaining (${data.errorsFixed} fixed)`);
+      }
+    };
+
+    const handleRetryLoopSuccess = (data: any) => {
+      if (data.migrationId === migrationId) {
+        console.log('🎉 Retry loop success!', data);
+        setRetryLoopState(prev => ({
+          ...prev,
+          status: 'success',
+          isActive: false,
+          totalErrors: 0,
+          phase: 'idle'
+        }));
+        addActivity('info', undefined, `🎉 SUCCESS! Zero errors achieved after ${data.totalAttempts} attempt(s)`);
+      }
+    };
+
+    const handleRetryLoopFailed = (data: any) => {
+      if (data.migrationId === migrationId) {
+        console.log('❌ Retry loop failed:', data);
+        setRetryLoopState(prev => ({
+          ...prev,
+          status: 'failed',
+          isActive: false,
+          phase: 'idle'
+        }));
+        addActivity('info', undefined, `❌ Max retries reached - ${data.errorsRemaining} errors remain`);
+      }
+    };
+
     websocketService.on('agent-started', handleAgentStarted);
     websocketService.on('agent-progress', handleAgentProgress);
     websocketService.on('agent-completed', handleAgentCompleted);
+    websocketService.on('agent-reset', handleAgentReset);
     websocketService.on('migration-completed', handleMigrationCompleted);
     websocketService.on('migration-restarted', handleMigrationRestarted);
     websocketService.on('agent-log', handleAgentLog);
+
+    // Subscribe to retry loop events
+    websocketService.onRetryLoopStarted(handleRetryLoopStarted);
+    websocketService.onRetryLoopProgress(handleRetryLoopProgress);
+    websocketService.onRetryLoopIterationCompleted(handleRetryLoopIterationCompleted);
+    websocketService.onRetryLoopSuccess(handleRetryLoopSuccess);
+    websocketService.onRetryLoopFailed(handleRetryLoopFailed);
 
     return () => {
       websocketService.off('agent-started', handleAgentStarted);
       websocketService.off('agent-progress', handleAgentProgress);
       websocketService.off('agent-completed', handleAgentCompleted);
+      websocketService.off('agent-reset', handleAgentReset);
       websocketService.off('migration-completed', handleMigrationCompleted);
       websocketService.off('migration-restarted', handleMigrationRestarted);
       websocketService.off('agent-log', handleAgentLog);
+
+      // Cleanup retry loop event listeners
+      websocketService.offRetryLoopStarted(handleRetryLoopStarted);
+      websocketService.offRetryLoopProgress(handleRetryLoopProgress);
+      websocketService.offRetryLoopIterationCompleted(handleRetryLoopIterationCompleted);
+      websocketService.offRetryLoopSuccess(handleRetryLoopSuccess);
+      websocketService.offRetryLoopFailed(handleRetryLoopFailed);
+
       websocketService.unsubscribeMigration(migrationId);
     };
   }, [migrationId, router]);
@@ -708,6 +917,22 @@ export default function DashboardPage() {
       tools: AGENT_CONFIGS['migration-planner'].tools
     });
 
+    // Step 2.5: Retry Planner (positioned below migration-planner)
+    const retryPlanner = getAgentProgress('retry-planner');
+    nodes.push({
+      id: 'retry-planner',
+      agentName: 'retry-planner',
+      type: 'agent',
+      title: AGENT_CONFIGS['retry-planner'].title,
+      subtitle: AGENT_CONFIGS['retry-planner'].description,
+      team: AGENT_CONFIGS['retry-planner'].team,
+      status: retryPlanner?.status || 'pending',
+      position: { x: 700, y: 500 },
+      label: AGENT_CONFIGS['retry-planner'].label,
+      systemPrompt: AGENT_CONFIGS['retry-planner'].systemPrompt,
+      tools: AGENT_CONFIGS['retry-planner'].tools
+    });
+
     // Step 3: Service Generator (top)
     const serviceGen = getAgentProgress('service-generator');
     nodes.push({
@@ -788,7 +1013,23 @@ export default function DashboardPage() {
       tools: AGENT_CONFIGS['e2e-test-validator'].tools
     });
 
-    // Step 5: Container Deployer
+    // Step 5: Build Validator (NEW!)
+    const buildVal = getAgentProgress('build-validator');
+    nodes.push({
+      id: 'build-validator',
+      agentName: 'build-validator',
+      type: 'agent',
+      title: AGENT_CONFIGS['build-validator'].title,
+      subtitle: AGENT_CONFIGS['build-validator'].description,
+      team: AGENT_CONFIGS['build-validator'].team,
+      status: buildVal?.status || 'pending',
+      position: { x: 1650, y: 250 },
+      label: AGENT_CONFIGS['build-validator'].label,
+      systemPrompt: AGENT_CONFIGS['build-validator'].systemPrompt,
+      tools: AGENT_CONFIGS['build-validator'].tools
+    });
+
+    // Step 6: Container Deployer
     const containerDep = getAgentProgress('container-deployer');
     nodes.push({
       id: 'container-deployer',
@@ -798,7 +1039,7 @@ export default function DashboardPage() {
       subtitle: AGENT_CONFIGS['container-deployer'].description,
       team: AGENT_CONFIGS['container-deployer'].team,
       status: containerDep?.status || 'pending',
-      position: { x: 1700, y: 250 },
+      position: { x: 1950, y: 250 },
       label: AGENT_CONFIGS['container-deployer'].label,
       systemPrompt: AGENT_CONFIGS['container-deployer'].systemPrompt,
       tools: AGENT_CONFIGS['container-deployer'].tools
@@ -809,7 +1050,7 @@ export default function DashboardPage() {
 
   const workflowNodes = buildWorkflowNodes();
 
-  // Define connections - CORRECT SEQUENTIAL FLOW
+  // Define connections - WITH RETRY FEEDBACK LOOP + BUILD VALIDATION
   const connections = [
     { from: 'trigger', to: 'code-analyzer' },
     { from: 'code-analyzer', to: 'migration-planner' },
@@ -819,8 +1060,13 @@ export default function DashboardPage() {
     { from: 'frontend-migrator', to: 'unit-test-validator' },
     { from: 'unit-test-validator', to: 'integration-test-validator' },
     { from: 'integration-test-validator', to: 'e2e-test-validator' },
-    // Container Deployer ONLY runs after ALL tests pass
-    { from: 'e2e-test-validator', to: 'container-deployer' },
+    // Retry Loop: E2E test validator → retry-planner → migration-planner (feedback)
+    { from: 'e2e-test-validator', to: 'retry-planner' },
+    { from: 'retry-planner', to: 'migration-planner' },
+    // Build Validator runs AFTER all tests pass to ensure code builds & runs
+    { from: 'e2e-test-validator', to: 'build-validator' },
+    // Container Deployer ONLY runs after build validation passes
+    { from: 'build-validator', to: 'container-deployer' },
   ];
 
   if (loading) {
@@ -1125,9 +1371,12 @@ export default function DashboardPage() {
               <span className="text-sm font-medium text-slate-700">
                 {migration.status === 'completed' ? 'Completed' :
                  migration.status === 'failed' ? 'Failed' :
+                 migration.status === 'retrying' ? '🔄 Retrying' :
+                 migration.status === 'completed_with_errors' ? '❌ Errors' :
                  ['analyzing', 'planning', 'generating', 'validating'].includes(migration.status) ? 'Active' : 'Inactive'}
               </span>
               <div className={`w-11 h-6 rounded-full transition-all duration-300 ${
+                migration.status === 'retrying' ? 'bg-gradient-to-r from-orange-500 to-amber-500' :
                 ['analyzing', 'planning', 'generating', 'validating'].includes(migration.status) ? 'bg-gradient-to-r from-emerald-500 to-green-500' : 'bg-slate-300'
               } relative shadow-inner`}>
                 <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-all duration-300 shadow-lg ${
@@ -1152,6 +1401,102 @@ export default function DashboardPage() {
           </div>
         </div>
       </header>
+
+      {/* Retry System Status Banner */}
+      {(migration.status === 'retrying' || (migration as any).retryAttempt) && (
+        <div className="bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 border-b-2 border-orange-300 px-6 py-4">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-600 rounded-full flex items-center justify-center animate-pulse shadow-lg">
+                  <span className="text-2xl">🔄</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-2">
+                  <h3 className="text-lg font-bold text-orange-900">
+                    🤖 Intelligent Retry System Active
+                  </h3>
+                  <span className="px-3 py-1 bg-orange-200 text-orange-900 text-xs font-bold rounded-full border-2 border-orange-400">
+                    RETRY {(migration as any).retryAttempt || 1}/3
+                  </span>
+                </div>
+                <p className="text-sm text-orange-800 mb-3">
+                  Critical errors detected. AI is analyzing issues and adjusting generation prompts automatically.
+                </p>
+
+                {(migration as any).errorAnalysis && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-lg p-3 border-2 border-orange-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-red-600 font-bold">⚠️</span>
+                        <span className="text-xs font-semibold text-slate-700">Critical Issues</span>
+                      </div>
+                      <p className="text-2xl font-bold text-red-600">
+                        {(migration as any).errorAnalysis?.analysis?.criticalIssues?.length || 0}
+                      </p>
+                    </div>
+
+                    <div className="bg-white rounded-lg p-3 border-2 border-orange-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-blue-600 font-bold">🤖</span>
+                        <span className="text-xs font-semibold text-slate-700">AI Confidence</span>
+                      </div>
+                      <p className="text-2xl font-bold text-blue-600">
+                        {((migration as any).errorAnalysis?.retryStrategy?.confidence * 100 || 0).toFixed(0)}%
+                      </p>
+                    </div>
+
+                    <div className="bg-white rounded-lg p-3 border-2 border-orange-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-emerald-600 font-bold">📊</span>
+                        <span className="text-xs font-semibold text-slate-700">Success Rate</span>
+                      </div>
+                      <p className="text-lg font-bold text-emerald-600">
+                        {(migration as any).errorAnalysis?.retryStrategy?.estimatedSuccessRate || 'Analyzing'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-3 flex items-center gap-2 text-xs text-orange-700">
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-orange-600"></div>
+                  <span>Regenerating code with adjusted prompts...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Analysis Available Banner */}
+      {migration.status === 'completed_with_errors' && (migration as any).errorAnalysis && (
+        <div className="bg-gradient-to-r from-red-50 via-rose-50 to-red-50 border-b-2 border-red-300 px-6 py-4">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-rose-600 rounded-full flex items-center justify-center shadow-lg">
+                  <span className="text-2xl">❌</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-red-900 mb-2">
+                  ⚠️ Migration Completed with Critical Errors
+                </h3>
+                <p className="text-sm text-red-800 mb-3">
+                  Maximum retry attempts (3) reached. Manual review required.
+                </p>
+                <div className="bg-white rounded-lg p-3 border-2 border-red-200 inline-block">
+                  <span className="text-xs font-semibold text-slate-700 mr-2">Critical Issues:</span>
+                  <span className="text-xl font-bold text-red-600">
+                    {(migration as any).errorAnalysis?.analysis?.criticalIssues?.length || 0}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar - Professional shadcn style */}
@@ -1186,9 +1531,9 @@ export default function DashboardPage() {
             {/* Download Button - Always Visible */}
             <button
               onClick={handleDownload}
-              disabled={migration.status !== 'completed'}
+              disabled={migration.status !== 'completed' && migration.status !== 'completed_with_errors'}
               className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-all font-semibold text-sm ${
-                migration.status === 'completed'
+                migration.status === 'completed' || migration.status === 'completed_with_errors'
                   ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:scale-105'
                   : 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
               }`}
@@ -1196,7 +1541,7 @@ export default function DashboardPage() {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
-              {migration.status === 'completed' ? 'Download Code' : 'Not Ready'}
+              {migration.status === 'completed' || migration.status === 'completed_with_errors' ? 'Download Code' : 'Not Ready'}
             </button>
 
             {/* Restart Migration Button */}
@@ -1295,6 +1640,7 @@ export default function DashboardPage() {
             {/* SVG for connections */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }}>
               <defs>
+                {/* Standard arrows */}
                 <marker
                   id="arrowhead"
                   markerWidth="10"
@@ -1315,36 +1661,122 @@ export default function DashboardPage() {
                 >
                   <polygon points="0 0, 10 3, 0 6" fill="#8B5CF6" />
                 </marker>
+
+                {/* Retry loop arrows - Amber (E2E → Retry Planner) */}
+                <marker
+                  id="arrowhead-retry-input"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 12 3.5, 0 7" fill="#F59E0B" />
+                </marker>
+                <marker
+                  id="arrowhead-retry-input-inactive"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 12 3.5, 0 7" fill="#FDE68A" />
+                </marker>
+
+                {/* Feedback loop arrows - Emerald (Retry → Migration) */}
+                <marker
+                  id="arrowhead-feedback"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 12 3.5, 0 7" fill="#10B981" />
+                </marker>
+                <marker
+                  id="arrowhead-feedback-inactive"
+                  markerWidth="12"
+                  markerHeight="12"
+                  refX="10"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 12 3.5, 0 7" fill="#D1FAE5" />
+                </marker>
               </defs>
               {connections.map((conn, idx) => {
                 const fromNode = workflowNodes.find(n => n.id === conn.from);
                 const toNode = workflowNodes.find(n => n.id === conn.to);
                 if (!fromNode || !toNode) return null;
 
-                const startX = fromNode.position.x + 208; // w-52 = 208px
-                const startY = fromNode.position.y + 65;
-                const endX = toNode.position.x;
-                const endY = toNode.position.y + 65;
+                let startX = fromNode.position.x + 208; // w-52 = 208px
+                let startY = fromNode.position.y + 65;
+                let endX = toNode.position.x;
+                let endY = toNode.position.y + 65;
 
                 const isActive = fromNode.status === 'completed' && (toNode.status === 'running' || toNode.status === 'completed');
 
-                // Calculate control points for smooth bezier curve
-                // Control points extend horizontally from each node for smooth curves
-                const horizontalOffset = 120;
-                const cp1x = startX + horizontalOffset;
-                const cp1y = startY;
-                const cp2x = endX - horizontalOffset;
-                const cp2y = endY;
+                let pathD = '';
+                let strokeColor = isActive ? '#8B5CF6' : '#E2E8F0';
+                let strokeWidth = isActive ? '3' : '2';
+                let markerEnd = isActive ? 'url(#arrowhead-active)' : 'url(#arrowhead)';
+                let strokeDasharray = undefined;
+
+                // Special path for retry-planner connections (feedback loop)
+                if (conn.from === 'e2e-test-validator' && conn.to === 'retry-planner') {
+                  // E2E Test → Retry Planner: Route BELOW avoiding cards
+                  // Connect to BOTTOM edge of retry planner card to avoid crossing
+                  const cardHeight = 130; // Approximate card height
+                  endY = toNode.position.y + cardHeight + 10; // Bottom of card + margin
+
+                  const bottomY = 630; // Safe zone below all cards
+                  const cp1x = startX + 50;
+                  const cp1y = bottomY;
+                  const cp2x = endX + 100;
+                  const cp2y = bottomY;
+                  pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+                  strokeColor = isActive ? '#F59E0B' : '#FDE68A'; // Amber color for retry input
+                  strokeWidth = isActive ? '4' : '2.5';
+                  markerEnd = isActive ? 'url(#arrowhead-retry-input)' : 'url(#arrowhead-retry-input-inactive)';
+                  strokeDasharray = '8 4'; // Dashed line
+                } else if (conn.from === 'retry-planner' && conn.to === 'migration-planner') {
+                  // Retry Planner → Migration Planner: Wide arc to the LEFT (avoiding cards)
+                  // Start from LEFT edge of retry planner
+                  startX = fromNode.position.x; // Left edge instead of right edge
+                  startY = fromNode.position.y + 65;
+
+                  const leftX = 30; // Safe zone to the left of all cards
+                  const cp1x = leftX;
+                  const cp1y = startY;
+                  const cp2x = leftX;
+                  const cp2y = endY;
+                  pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+                  strokeColor = isActive ? '#10B981' : '#D1FAE5'; // Emerald color for feedback
+                  strokeWidth = isActive ? '4' : '2.5';
+                  markerEnd = isActive ? 'url(#arrowhead-feedback)' : 'url(#arrowhead-feedback-inactive)';
+                  strokeDasharray = '10 5'; // Dashed line
+                } else {
+                  // Standard bezier curve for normal connections
+                  const horizontalOffset = 120;
+                  const cp1x = startX + horizontalOffset;
+                  const cp1y = startY;
+                  const cp2x = endX - horizontalOffset;
+                  const cp2y = endY;
+                  pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+                }
 
                 return (
                   <g key={`conn-${idx}`}>
                     <path
-                      d={`M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`}
-                      stroke={isActive ? '#8B5CF6' : '#E2E8F0'}
-                      strokeWidth={isActive ? '3' : '2'}
+                      d={pathD}
+                      stroke={strokeColor}
+                      strokeWidth={strokeWidth}
                       fill="none"
-                      markerEnd={isActive ? 'url(#arrowhead-active)' : 'url(#arrowhead)'}
+                      markerEnd={markerEnd}
                       className={isActive ? 'animate-pulse' : ''}
+                      strokeDasharray={strokeDasharray}
                     />
                   </g>
                 );
